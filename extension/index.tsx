@@ -263,6 +263,27 @@ function Bullets({ items, theme, empty }: { items: readonly string[]; theme: Ext
   );
 }
 
+/** `- ` lines become rows with a hanging indent so wrapped bullets stay readable in a narrow pane. */
+function BulletedText({ text, ...props }: Parameters<typeof LinkedText>[0]) {
+  return (
+    <box style={{ flexDirection: "column", backgroundColor: props.bg }}>
+      {text.split("\n").filter((line) => line.trim() !== "").map((line, index) => {
+        const bullet = line.trimStart().startsWith("- ");
+        return bullet ? (
+          <box key={index} style={{ flexDirection: "row", backgroundColor: props.bg }}>
+            <text content="• " fg={props.fg} bg={props.bg} />
+            <box style={{ flexGrow: 1, flexShrink: 1, backgroundColor: props.bg }}>
+              <LinkedText {...props} text={line.trimStart().slice(2)} />
+            </box>
+          </box>
+        ) : (
+          <LinkedText key={index} {...props} text={line} />
+        );
+      })}
+    </box>
+  );
+}
+
 function LinkedText({
   text,
   links,
@@ -373,7 +394,7 @@ function StopRow({
       </box>
       {current ? (
         <box style={{ flexDirection: "column", paddingLeft: 5, paddingRight: 1, paddingBottom: 1, backgroundColor: bg }}>
-          <LinkedText text={stop.body} links={links} fg={theme.text} bg={bg} theme={theme} />
+          <BulletedText text={stop.body} links={links} fg={theme.text} bg={bg} theme={theme} />
           <box style={{ marginTop: 1, backgroundColor: bg }}>
             <LinkedText
               text={stop.ask}
@@ -415,7 +436,7 @@ function TrackHeading({
         </text>
       </box>
       <box style={{ paddingLeft: 2, paddingRight: 1 }}>
-        <LinkedText text={track.summary} links={links} fg={theme.muted} theme={theme} />
+        <BulletedText text={track.summary} links={links} fg={theme.muted} theme={theme} />
       </box>
     </box>
   );
@@ -467,7 +488,7 @@ function TourPane({ files, theme, actions }: ExtensionPaneProps): ReactNode {
           <text content={tour.verdict.toUpperCase()} fg={verdictColor(tour.verdict, theme)} attributes={TextAttributes.BOLD} />
         </box>
         <box style={{ marginTop: 1, paddingLeft: 1, paddingRight: 1 }}>
-          <text content={tour.summary} fg={theme.text} wrapMode="word" />
+          <BulletedText text={tour.summary} links={links} fg={theme.text} theme={theme} />
         </box>
 
         <Heading label={`Stops (${stops.length})`} theme={theme} />
