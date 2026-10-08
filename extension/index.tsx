@@ -18,7 +18,6 @@ import type {
 import {
   initialCursor,
   move,
-  parseTour,
   validateTour,
   type Stop,
   type StopKind,
@@ -72,14 +71,7 @@ async function loadAndCheck(file: string, cwd: string): Promise<ValidateResult> 
   } catch (error) {
     return { ok: false, errors: [`cannot read ${path}: ${error instanceof Error ? error.message : String(error)}`] };
   }
-  const parsed = parseTour(raw);
-  if (!parsed.ok) return parsed;
-  try {
-    const ranges = await readDiffRanges(cwd, parsed.tour.base, parsed.tour.head);
-    return validateTour(raw, ranges);
-  } catch (error) {
-    return { ok: false, errors: [error instanceof Error ? error.message : String(error)] };
-  }
+  return validateTour(raw, (base, head) => readDiffRanges(cwd, base, head));
 }
 
 async function writeSidecar(tour: Tour): Promise<string> {

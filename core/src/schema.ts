@@ -1,3 +1,5 @@
+import { referencedIds, STOP_ID_PATTERN } from "./links";
+
 export const TOUR_VERSION = 1;
 
 export const STOP_KINDS = ["blocker", "risk", "question", "inspect", "context"] as const;
@@ -8,6 +10,8 @@ export type Verdict = (typeof VERDICTS)[number];
 
 /** One place the human must look. Array position within its track is the narrative order. */
 export interface Stop {
+  /** Lets other stops and track summaries reference this one as `[[id]]`. Unique across the tour. */
+  id?: string;
   /** Path as git reports it: the new path, or the old path for a deleted file. */
   path: string;
   side: "new" | "old";
@@ -15,16 +19,16 @@ export interface Stop {
   endLine?: number;
   kind: StopKind;
   title: string;
-  /** What changed here and why it matters. Plain text. */
+  /** What changed here and why it matters. Plain text; may reference other stops as `[[id]]`. */
   body: string;
-  /** The decision only the human can make at this stop. */
+  /** The decision only the human can make at this stop. May reference other stops as `[[id]]`. */
   ask: string;
 }
 
 /** Stops that only make sense together: one causal chain, one subsystem, or one concern. */
 export interface Track {
   title: string;
-  /** How the stops in this track relate, and why the reviewer should read them together. Plain text. */
+  /** How the stops in this track relate, and why the reviewer should read them together. Plain text; may reference stops as `[[id]]`. */
   summary: string;
   stops: Stop[];
 }
@@ -115,6 +119,11 @@ function parseStop(raw: unknown, at: string, c: Collector): Stop {
     return { path: "", side: "new", line: 1, kind: "context", title: "", body: "", ask: "" };
   }
   const prefix = `${at}.`;
+  let id: string | undefined;
+  if (raw.id !== undefined) {
+    if (typeof raw.id === "string" && STOP_ID_PATTERN.test(raw.id)) id = raw.id;
+    else c.errors.push(`${prefix}id must be lowercase letters, digits and hyphens, starting with a letter or digit`);
+  }
   const path = c.string(raw, "path", prefix);
   const side = c.member(["new", "old"] as const, raw, "side", prefix);
   let line = 1;
@@ -134,7 +143,17 @@ function parseStop(raw: unknown, at: string, c: Collector): Stop {
   const title = c.string(raw, "title", prefix);
   const body = c.string(raw, "body", prefix);
   const ask = c.string(raw, "ask", prefix);
-  return { path, side, line, ...(endLine === undefined ? {} : { endLine }), kind, title, body, ask };
+  return {
+    ...(id === undefined ? {} : { id }),
+    path,
+    side,
+    line,
+    ...(endLine === undefined ? {} : { endLine }),
+    kind,
+    title,
+    body,
+    ask,
+  };
 }
 
 function parseTrack(raw: unknown, at: string, c: Collector): Track {
@@ -152,6 +171,62 @@ function parseTrack(raw: unknown, at: string, c: Collector): Track {
     stops = raw.stops.map((stop, index) => parseStop(stop, `${prefix}stops[${index}]`, c));
   }
   return { title, summary, stops };
+}
+
+function editDistance(a: string, b: string): number {
+  let previous = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const row = [i];
+    for (let j = 1; j <= b.length; j++) {
+      row.push(Math.min(previous[j]! + 1, row[j - 1]! + 1, previous[j - 1]! + (a[i - 1] === b[j - 1] ? 0 : 1)));
+    }
+    previous = row;
+  }
+  return previous[b.length]!;
+}
+
+function closestId(id: string, candidates: Iterable<string>): string | undefined {
+  let best: string | undefined;
+  let bestDistance = Math.max(2, Math.floor(id.length / 2)) + 1;
+  for (const candidate of candidates) {
+    const distance = editDistance(id, candidate);
+    if (distance < bestDistance) {
+      best = candidate;
+      bestDistance = distance;
+    }
+  }
+  return best;
+}
+
+function checkReferences(tracks: readonly Track[], c: Collector) {
+  const owners = new Map<string, string>();
+  tracks.forEach((track, t) =>
+    track.stops.forEach((stop, s) => {
+      if (stop.id === undefined) return;
+      const at = `tracks[${t}].stops[${s}]`;
+      const owner = owners.get(stop.id);
+      if (owner) c.errors.push(`${at}.id "${stop.id}" duplicates ${owner}`);
+      else owners.set(stop.id, at);
+    }),
+  );
+
+  const check = (text: string, at: string, self?: string) => {
+    for (const id of new Set(referencedIds(text))) {
+      if (id === self) {
+        c.errors.push(`${at} references its own stop [[${id}]]`);
+      } else if (!owners.has(id)) {
+        const suggestion = closestId(id, owners.keys());
+        c.errors.push(`${at} references unknown stop [[${id}]]${suggestion ? ` (did you mean [[${suggestion}]]?)` : ""}`);
+      }
+    }
+  };
+  tracks.forEach((track, t) => {
+    check(track.summary, `tracks[${t}].summary`);
+    track.stops.forEach((stop, s) => {
+      check(stop.body, `tracks[${t}].stops[${s}].body`, stop.id);
+      check(stop.ask, `tracks[${t}].stops[${s}].ask`, stop.id);
+    });
+  });
 }
 
 function parseSkipped(raw: unknown, at: string, c: Collector): SkippedFile {
@@ -195,6 +270,7 @@ export function parseTour(raw: unknown): ParseResult {
     c.errors.push("tracks must be an array (may be empty)");
   } else {
     tracks = raw.tracks.map((track, index) => parseTrack(track, `tracks[${index}]`, c));
+    checkReferences(tracks, c);
   }
 
   let skipped: SkippedFile[] = [];

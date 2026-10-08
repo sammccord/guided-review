@@ -12,14 +12,14 @@ const stops = tourStops(
   }),
 );
 const trackCount = 3;
-const at = (current: number): TourCursor => ({ current });
+const at = (current: number, history: number[] = []): TourCursor => ({ current, history });
 const step = (current: number, tourMove: TourMove): MoveResult => move(stops, trackCount, at(current), tourMove);
-const to = (current: number): MoveResult => ({ ok: true, cursor: { current } });
+const to = (current: number, history: number[] = []): MoveResult => ({ ok: true, cursor: { current, history } });
 const refused = (reason: string): MoveResult => ({ ok: false, reason });
 
 describe("move", () => {
   test("starts before the first stop", () => {
-    expect(initialCursor()).toEqual({ current: -1 });
+    expect(initialCursor()).toEqual({ current: -1, history: [] });
   });
 
   test("not started: next and nextTrack begin the tour, prev and prevTrack refuse", () => {
@@ -75,6 +75,45 @@ describe("move", () => {
     const cursor = at(1);
     step(1, { kind: "next" });
     move(stops, trackCount, cursor, { kind: "next" });
-    expect(cursor).toEqual({ current: 1 });
+    expect(cursor).toEqual({ current: 1, history: [] });
+  });
+});
+
+describe("link history", () => {
+  const from = (cursor: TourCursor, tourMove: TourMove): MoveResult => move(stops, trackCount, cursor, tourMove);
+
+  test("follow pushes the current stop and goes to the target", () => {
+    expect(from(at(1), { kind: "follow", index: 4 })).toEqual(to(4, [1]));
+    expect(from(at(4, [1]), { kind: "follow", index: 0 })).toEqual(to(0, [1, 4]));
+  });
+
+  test("follow before the tour starts records nothing", () => {
+    expect(from(initialCursor(), { kind: "follow", index: 2 })).toEqual(to(2));
+  });
+
+  test("follow to a missing stop refuses and leaves history alone", () => {
+    expect(from(at(1), { kind: "follow", index: 9 })).toEqual(refused("End of tour (5 stops)"));
+  });
+
+  test("back pops the most recent stop", () => {
+    expect(from(at(0, [1, 4]), { kind: "back" })).toEqual(to(4, [1]));
+    expect(from(at(4, [1]), { kind: "back" })).toEqual(to(1));
+    expect(from(at(1), { kind: "back" })).toEqual(refused("No earlier stop to go back to"));
+    expect(from(initialCursor(), { kind: "back" })).toEqual(refused("No earlier stop to go back to"));
+  });
+
+  test("follow then back round-trips", () => {
+    const followed = from(at(2), { kind: "follow", index: 4 });
+    expect(followed.ok && from(followed.cursor, { kind: "back" })).toEqual(to(2));
+  });
+
+  test("ordinary moves keep history; restart clears it", () => {
+    const history = [3, 0];
+    expect(from(at(1, history), { kind: "next" })).toEqual(to(2, history));
+    expect(from(at(1, history), { kind: "prev" })).toEqual(to(0, history));
+    expect(from(at(1, history), { kind: "nextTrack" })).toEqual(to(2, history));
+    expect(from(at(4, history), { kind: "prevTrack" })).toEqual(to(3, history));
+    expect(from(at(1, history), { kind: "goto", index: 4 })).toEqual(to(4, history));
+    expect(from(at(4, history), { kind: "restart" })).toEqual(to(0));
   });
 });
