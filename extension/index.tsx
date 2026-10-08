@@ -15,17 +15,32 @@ import type {
   ExtensionReviewNavigation,
   HunkExtensionAPI,
 } from "hunkdiff/extension";
-import { checkAnchors, parseTour, readDiffRanges, toSidecar, type Stop, type StopKind, type Tour, type Verdict } from "./tour";
+import {
+  checkAnchors,
+  checkStopSize,
+  parseTour,
+  readDiffRanges,
+  toSidecar,
+  tourStops,
+  type Stop,
+  type StopKind,
+  type Tour,
+  type TourStop,
+  type Track,
+  type Verdict,
+} from "./tour";
 
 const PANE_ID = "tour";
 const USAGE = "usage: hunk tour check|open <tour.json>";
 
 interface TourState {
   tour: Tour | null;
+  stops: readonly TourStop[];
+  /** Index into `stops`; -1 until the tour starts. */
   current: number;
 }
 
-let state: TourState = { tour: null, current: -1 };
+let state: TourState = { tour: null, stops: [], current: -1 };
 const listeners = new Set<() => void>();
 
 function setState(next: TourState) {
@@ -87,15 +102,19 @@ async function runTourCli(args: readonly string[], ctx: ExtensionCliCommandConte
     return { kind: "exit", code: 1 };
   }
   const { tour } = result;
+  const stops = tourStops(tour);
+  await writeLines(ctx.stderr, checkStopSize(tour).map((message) => `warning: ${message}`));
 
   if (subcommand === "check") {
-    const fileCount = new Set(tour.stops.map((stop) => stop.path)).size;
-    await writeLines(ctx.stdout, [`ok: ${tour.stops.length} stops across ${fileCount} files, verdict ${tour.verdict}`]);
+    const fileCount = new Set(stops.map(({ stop }) => stop.path)).size;
+    await writeLines(ctx.stdout, [
+      `ok: ${stops.length} stops in ${tour.tracks.length} tracks across ${fileCount} files, verdict ${tour.verdict}`,
+    ]);
     return { kind: "exit", code: 0 };
   }
 
   const sidecarPath = await writeSidecar(tour);
-  setState({ tour, current: -1 });
+  setState({ tour, stops, current: -1 });
   return { kind: "delegate", argv: ["diff", `${tour.base}...${tour.head}`, "--agent-context", sidecarPath, "--agent-notes"] };
 }
 
@@ -118,18 +137,19 @@ function revealStop(
   navigation: ExtensionReviewNavigation,
   notify: (message: string, type?: ExtensionNotifyType) => void,
   fileId: string | undefined,
-  tour: Tour,
   index: number,
   missing: string,
 ) {
-  const stop = tour.stops[index]!;
-  setState({ tour, current: index });
+  const { tour, stops } = state;
+  const { number, stop, track, trackIndex } = stops[index]!;
+  setState({ tour, stops, current: index });
   if (fileId === undefined) {
-    notify(`Stop ${index + 1}: ${stop.path} ${missing}`, "warning");
+    notify(`Stop ${number}: ${stop.path} ${missing}`, "warning");
     return;
   }
   navigation.revealLine(fileId, stop.side, stop.line);
-  notify(`Stop ${index + 1}/${tour.stops.length}: ${stop.title}`);
+  const trackCount = tour?.tracks.length ?? 0;
+  notify(`Stop ${number}/${stops.length} · Track ${trackIndex + 1}/${trackCount} ${track.title}: ${stop.title}`);
 }
 
 /** Hosts before API 26 lack `selection.files`; their snapshot lists filtered files too, and revealLine warns for those. */
@@ -145,14 +165,17 @@ function locateForCommand(ctx: ExtensionCommandContext, stop: Stop): { fileId?: 
   return inReview ? { fileId: inReview.id, missing: "" } : { missing: "is not in this review" };
 }
 
+function requireTour(ctx: ExtensionCommandContext): boolean {
+  if (state.tour) return true;
+  ctx.notify("No tour loaded. Start one with `hunk tour open <tour.json>`.", "warning");
+  return false;
+}
+
 function goTo(ctx: ExtensionCommandContext, index: number) {
-  const { tour } = state;
-  if (!tour) {
-    ctx.notify("No tour loaded. Start one with `hunk tour open <tour.json>`.", "warning");
-    return;
-  }
-  if (index >= tour.stops.length) {
-    ctx.notify(`End of tour (${tour.stops.length} stops)`);
+  if (!requireTour(ctx)) return;
+  const { stops } = state;
+  if (index >= stops.length) {
+    ctx.notify(`End of tour (${stops.length} stops)`);
     return;
   }
   if (index < 0) {
@@ -160,8 +183,44 @@ function goTo(ctx: ExtensionCommandContext, index: number) {
     return;
   }
   if (!ctx.panes.isOpen(PANE_ID)) ctx.panes.open(PANE_ID);
-  const { fileId, missing } = locateForCommand(ctx, tour.stops[index]!);
-  revealStop(ctx.navigation, ctx.notify, fileId, tour, index, missing);
+  const { fileId, missing } = locateForCommand(ctx, stops[index]!.stop);
+  revealStop(ctx.navigation, ctx.notify, fileId, index, missing);
+}
+
+function firstStopOfTrack(trackIndex: number): number {
+  return state.stops.findIndex((entry) => entry.trackIndex === trackIndex);
+}
+
+function goToNextTrack(ctx: ExtensionCommandContext) {
+  if (!requireTour(ctx)) return;
+  const { stops, current } = state;
+  const target = current < 0 ? 0 : stops[current]!.trackIndex + 1;
+  const index = firstStopOfTrack(target);
+  if (index < 0) {
+    ctx.notify(`Already in the last track (${state.tour!.tracks.length} tracks)`);
+    return;
+  }
+  goTo(ctx, index);
+}
+
+function goToPreviousTrack(ctx: ExtensionCommandContext) {
+  if (!requireTour(ctx)) return;
+  const { stops, current } = state;
+  if (current < 0) {
+    ctx.notify("Already at the first stop");
+    return;
+  }
+  const trackIndex = stops[current]!.trackIndex;
+  const trackStart = firstStopOfTrack(trackIndex);
+  if (current > trackStart) {
+    goTo(ctx, trackStart);
+    return;
+  }
+  if (trackIndex === 0) {
+    ctx.notify("Already in the first track");
+    return;
+  }
+  goTo(ctx, firstStopOfTrack(trackIndex - 1));
 }
 
 function kindColor(kind: StopKind, theme: ExtensionPaneTheme): string {
@@ -223,6 +282,7 @@ function StopRow({
   onSelect,
 }: {
   stop: Stop;
+  /** Global position in the tour, 0-based. */
   index: number;
   current: boolean;
   theme: ExtensionPaneTheme;
@@ -253,8 +313,34 @@ function StopRow({
   );
 }
 
+function TrackHeading({
+  track,
+  trackIndex,
+  current,
+  theme,
+}: {
+  track: Track;
+  trackIndex: number;
+  current: boolean;
+  theme: ExtensionPaneTheme;
+}) {
+  return (
+    <box style={{ flexDirection: "column", marginTop: 1 }}>
+      <box style={{ paddingLeft: 1, paddingRight: 1 }}>
+        <text wrapMode="word">
+          <span fg={theme.accent} attributes={TextAttributes.BOLD}>{`${current ? "▸" : " "}Track ${trackIndex + 1}: ${track.title}`}</span>
+          <span fg={theme.muted}>{` (${track.stops.length} stop${track.stops.length === 1 ? "" : "s"})`}</span>
+        </text>
+      </box>
+      <box style={{ paddingLeft: 2, paddingRight: 1 }}>
+        <text content={track.summary} fg={theme.muted} wrapMode="word" />
+      </box>
+    </box>
+  );
+}
+
 function TourPane({ files, theme, actions }: ExtensionPaneProps): ReactNode {
-  const { tour, current } = useTourState();
+  const { tour, stops, current } = useTourState();
   const scrollRef = useRef<ScrollBoxRenderable | null>(null);
 
   useEffect(() => {
@@ -264,9 +350,10 @@ function TourPane({ files, theme, actions }: ExtensionPaneProps): ReactNode {
   if (!tour) return <text content=" No tour loaded" fg={theme.muted} />;
 
   const select = (index: number) => {
-    const file = findFile(files, tour.stops[index]!);
-    revealStop(actions, actions.notify, file?.id, tour, index, "is hidden by the file filter or not in this review");
+    const file = findFile(files, stops[index]!.stop);
+    revealStop(actions, actions.notify, file?.id, index, "is hidden by the file filter or not in this review");
   };
+  const currentTrack = current >= 0 ? stops[current]!.trackIndex : -1;
 
   return (
     <scrollbox
@@ -293,21 +380,28 @@ function TourPane({ files, theme, actions }: ExtensionPaneProps): ReactNode {
           <text content={tour.summary} fg={theme.text} wrapMode="word" />
         </box>
 
-        <Heading label={`Stops (${tour.stops.length})`} theme={theme} />
-        {current < 0 && tour.stops.length > 0 ? (
+        <Heading label={`Stops (${stops.length})`} theme={theme} />
+        {current < 0 && stops.length > 0 ? (
           <box style={{ paddingLeft: 2 }}>
             <text content="Press > to start the tour" fg={theme.muted} attributes={TextAttributes.ITALIC} />
           </box>
         ) : null}
-        {tour.stops.map((stop, index) => (
-          <StopRow
-            key={index}
-            stop={stop}
-            index={index}
-            current={index === current}
-            theme={theme}
-            onSelect={() => select(index)}
-          />
+        {tour.tracks.map((track, trackIndex) => (
+          <box key={trackIndex} style={{ flexDirection: "column", backgroundColor: theme.panel }}>
+            <TrackHeading track={track} trackIndex={trackIndex} current={trackIndex === currentTrack} theme={theme} />
+            {stops.map((entry, index) =>
+              entry.trackIndex === trackIndex ? (
+                <StopRow
+                  key={index}
+                  stop={entry.stop}
+                  index={index}
+                  current={index === current}
+                  theme={theme}
+                  onSelect={() => select(index)}
+                />
+              ) : null,
+            )}
+          </box>
         ))}
 
         <Heading label="Checked" theme={theme} />
@@ -340,5 +434,7 @@ export default function registerGuidedReview(hunk: HunkExtensionAPI) {
 
   hunk.registerCommand({ id: "next", title: "Next tour stop", key: ">" }, (ctx) => goTo(ctx, state.current + 1));
   hunk.registerCommand({ id: "prev", title: "Previous tour stop", key: "<" }, (ctx) => goTo(ctx, state.current - 1));
+  hunk.registerCommand({ id: "nextTrack", title: "Next tour track", key: ")" }, goToNextTrack);
+  hunk.registerCommand({ id: "prevTrack", title: "Previous tour track", key: "(" }, goToPreviousTrack);
   hunk.registerCommand({ id: "start", title: "Restart tour" }, (ctx) => goTo(ctx, 0));
 }

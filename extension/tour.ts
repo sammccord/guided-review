@@ -9,7 +9,7 @@ export const VERDICTS = ["approve", "request-changes", "discuss"] as const;
 export type StopKind = (typeof STOP_KINDS)[number];
 export type Verdict = (typeof VERDICTS)[number];
 
-/** One place the human must look. Array position in `Tour.stops` is the narrative order. */
+/** One place the human must look. Array position within its track is the narrative order. */
 export interface Stop {
   /** Path as git reports it: the new path, or the old path for a deleted file. */
   path: string;
@@ -22,6 +22,22 @@ export interface Stop {
   body: string;
   /** The decision only the human can make at this stop. */
   ask: string;
+}
+
+/** Stops that only make sense together: one causal chain, one subsystem, or one concern. */
+export interface Track {
+  title: string;
+  /** How the stops in this track relate, and why the reviewer should read them together. Plain text. */
+  summary: string;
+  stops: Stop[];
+}
+
+/** A stop with its global 1-based number and its track, in tour order. */
+export interface TourStop {
+  number: number;
+  stop: Stop;
+  track: Track;
+  trackIndex: number;
 }
 
 export interface SkippedFile {
@@ -41,7 +57,8 @@ export interface Tour {
   /** Intent of the change and the bottom line. Plain text. */
   summary: string;
   scope: { checked: string[]; unchecked: string[] };
-  stops: Stop[];
+  /** Track order, then stop order within each track, is the tour order. */
+  tracks: Track[];
   skipped: SkippedFile[];
 }
 
@@ -58,6 +75,26 @@ export interface HunkRange {
   end: number;
 }
 export type DiffRanges = ReadonlyMap<string, readonly HunkRange[]>;
+
+/** Stops longer than this many lines are flagged by `tour check` as too broad. */
+export const MAX_STOP_LINES = 20;
+
+export function tourStops(tour: Tour): TourStop[] {
+  const stops: TourStop[] = [];
+  tour.tracks.forEach((track, trackIndex) => {
+    for (const stop of track.stops) stops.push({ number: stops.length + 1, stop, track, trackIndex });
+  });
+  return stops;
+}
+
+/** Advisory messages for stops that should be split; never blocks opening. */
+export function checkStopSize(tour: Tour): string[] {
+  return tourStops(tour).flatMap(({ number, stop }) => {
+    const span = (stop.endLine ?? stop.line) - stop.line + 1;
+    if (span <= MAX_STOP_LINES) return [];
+    return [`stop ${number} "${stop.title}": spans ${span} lines; split it into smaller stops (max ${MAX_STOP_LINES})`];
+  });
+}
 
 export type ParseResult = { ok: true; tour: Tour } | { ok: false; errors: string[] };
 
@@ -137,6 +174,23 @@ function parseStop(raw: unknown, at: string, c: Collector): Stop {
   return { path, side, line, ...(endLine === undefined ? {} : { endLine }), kind, title, body, ask };
 }
 
+function parseTrack(raw: unknown, at: string, c: Collector): Track {
+  if (!isObject(raw)) {
+    c.errors.push(`${at} must be an object`);
+    return { title: "", summary: "", stops: [] };
+  }
+  const prefix = `${at}.`;
+  const title = c.string(raw, "title", prefix);
+  const summary = c.string(raw, "summary", prefix);
+  let stops: Stop[] = [];
+  if (!Array.isArray(raw.stops) || raw.stops.length === 0) {
+    c.errors.push(`${prefix}stops must be a non-empty array`);
+  } else {
+    stops = raw.stops.map((stop, index) => parseStop(stop, `${prefix}stops[${index}]`, c));
+  }
+  return { title, summary, stops };
+}
+
 function parseSkipped(raw: unknown, at: string, c: Collector): SkippedFile {
   if (!isObject(raw)) {
     c.errors.push(`${at} must be an object`);
@@ -172,11 +226,12 @@ export function parseTour(raw: unknown): ParseResult {
     c.errors.push("scope must be an object with checked and unchecked string arrays");
   }
 
-  let stops: Stop[] = [];
-  if (!Array.isArray(raw.stops)) {
-    c.errors.push("stops must be an array");
+  if (raw.stops !== undefined) c.errors.push("stops is no longer supported; group stops under tracks[]");
+  let tracks: Track[] = [];
+  if (!Array.isArray(raw.tracks)) {
+    c.errors.push("tracks must be an array (may be empty)");
   } else {
-    stops = raw.stops.map((stop, index) => parseStop(stop, `stops[${index}]`, c));
+    tracks = raw.tracks.map((track, index) => parseTrack(track, `tracks[${index}]`, c));
   }
 
   let skipped: SkippedFile[] = [];
@@ -198,7 +253,7 @@ export function parseTour(raw: unknown): ParseResult {
       verdict,
       summary,
       scope,
-      stops,
+      tracks,
       skipped,
     },
   };
@@ -257,10 +312,10 @@ function anchorProblem(stop: Stop, ranges: DiffRanges): string | null {
 /** Every anchor must land inside a hunk of the reviewed diff. Returns one message per bad stop. */
 export function checkAnchors(tour: Tour, ranges: DiffRanges): string[] {
   const messages: string[] = [];
-  tour.stops.forEach((stop, index) => {
+  for (const { number, stop } of tourStops(tour)) {
     const problem = anchorProblem(stop, ranges);
-    if (problem) messages.push(`stop ${index + 1} "${stop.title}": ${problem}`);
-  });
+    if (problem) messages.push(`stop ${number} "${stop.title}": ${problem}`);
+  }
   return messages;
 }
 
@@ -411,12 +466,12 @@ export function readDiffRanges(cwd: string, base: string, head: string): Promise
   });
 }
 
-function stopAnnotation(stop: Stop, index: number, total: number): AgentAnnotation {
+function stopAnnotation({ number, stop, track }: TourStop, total: number): AgentAnnotation {
   const range: [number, number] = [stop.line, stop.endLine ?? stop.line];
   return {
-    id: `stop-${index + 1}`,
+    id: `stop-${number}`,
     ...(stop.side === "new" ? { newRange: range } : { oldRange: range }),
-    summary: `${index + 1}/${total} [${stop.kind}] ${stop.title}`,
+    summary: `${number}/${total} [${stop.kind}] ${track.title} › ${stop.title}`,
     rationale: `${stop.body}\n\nAsk: ${stop.ask}`,
     tags: [stop.kind],
     source: "guided-review",
@@ -426,13 +481,14 @@ function stopAnnotation(stop: Stop, index: number, total: number): AgentAnnotati
 
 /** Files ordered by first stop, one entry per file, so hunk's sidebar and `{`/`}` follow the tour. */
 export function toSidecar(tour: Tour): SidecarDocument {
+  const stops = tourStops(tour);
   const byPath = new Map<string, { annotations: AgentAnnotation[]; numbers: number[] }>();
-  tour.stops.forEach((stop, index) => {
-    const entry = byPath.get(stop.path) ?? { annotations: [], numbers: [] };
-    entry.annotations.push(stopAnnotation(stop, index, tour.stops.length));
-    entry.numbers.push(index + 1);
-    byPath.set(stop.path, entry);
-  });
+  for (const entry of stops) {
+    const file = byPath.get(entry.stop.path) ?? { annotations: [], numbers: [] };
+    file.annotations.push(stopAnnotation(entry, stops.length));
+    file.numbers.push(entry.number);
+    byPath.set(entry.stop.path, file);
+  }
 
   const files: AgentFileContext[] = [...byPath].map(([path, entry]) => ({
     path,
@@ -446,9 +502,18 @@ export function toSidecar(tour: Tour): SidecarDocument {
     files.push({ path: skipped.path, summary: `Skipped: ${skipped.reason}`, annotations: [] });
   }
 
+  let first = 1;
+  const trackLines = tour.tracks.map((track, index) => {
+    const last = first + track.stops.length - 1;
+    const range = first === last ? `stop ${first}` : `stops ${first}-${last}`;
+    first = last + 1;
+    return `${index + 1}. ${track.title} (${range})`;
+  });
+  const tracks = trackLines.length > 0 ? `\n\nTracks:\n${trackLines.join("\n")}` : "";
+
   return {
     version: 1,
-    summary: `${tour.verdict.toUpperCase()} · ${tour.title}\n\n${tour.summary}`,
+    summary: `${tour.verdict.toUpperCase()} · ${tour.title}\n\n${tour.summary}${tracks}`,
     files,
   };
 }

@@ -3,7 +3,19 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { checkAnchors, parseTour, readDiffRanges, toSidecar, type DiffRanges, type Stop, type Tour } from "./tour";
+import {
+  MAX_STOP_LINES,
+  checkAnchors,
+  checkStopSize,
+  parseTour,
+  readDiffRanges,
+  toSidecar,
+  tourStops,
+  type DiffRanges,
+  type Stop,
+  type Tour,
+  type Track,
+} from "./tour";
 
 function stop(overrides: Partial<Stop> = {}): Stop {
   return {
@@ -18,7 +30,12 @@ function stop(overrides: Partial<Stop> = {}): Stop {
   };
 }
 
-function tour(overrides: Partial<Tour> = {}): Tour {
+function track(stops: Stop[], overrides: Partial<Track> = {}): Track {
+  return { title: "Retries", summary: "How retry is wired.", stops, ...overrides };
+}
+
+/** Accepts a flat stop list as shorthand for a single-track tour. */
+function tour({ stops, ...overrides }: Partial<Tour> & { stops?: Stop[] } = {}): Tour {
   return {
     version: 1,
     title: "Add retries",
@@ -27,7 +44,7 @@ function tour(overrides: Partial<Tour> = {}): Tour {
     verdict: "request-changes",
     summary: "Adds retry logic.",
     scope: { checked: ["unit tests"], unchecked: ["load"] },
-    stops: [stop()],
+    tracks: [track(stops ?? [stop()])],
     skipped: [],
     ...overrides,
   };
@@ -52,7 +69,10 @@ describe("parseTour", () => {
       verdict: "lgtm",
       summary: "s",
       scope: { checked: ["ok", 3], unchecked: "nope" },
-      stops: [stop(), { ...stop(), side: "both", line: 0, endLine: 1 }, stop({ line: 5, endLine: 4, kind: "nit" as never })],
+      tracks: [
+        track([stop()]),
+        { ...track([]), stops: [stop(), { ...stop(), side: "both", line: 0, endLine: 1 }, stop({ line: 5, endLine: 4, kind: "nit" as never })] },
+      ],
     });
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -63,28 +83,93 @@ describe("parseTour", () => {
         "verdict must be one of approve, request-changes, discuss",
         "scope.checked[1] must be a string",
         "scope.unchecked must be an array of strings",
-        "stops[1].side must be one of new, old",
-        "stops[1].line must be a positive integer",
-        "stops[2].endLine must be >= line",
-        "stops[2].kind must be one of blocker, risk, question, context",
+        "tracks[1].stops[1].side must be one of new, old",
+        "tracks[1].stops[1].line must be a positive integer",
+        "tracks[1].stops[2].endLine must be >= line",
+        "tracks[1].stops[2].kind must be one of blocker, risk, question, context",
         "skipped must be an array (may be empty)",
       ]);
     }
   });
 
-  test("accepts a tour with no stops and rejects non-objects", () => {
+  test("accepts a tour with no tracks and rejects non-objects", () => {
     expect(parseTour(null)).toEqual({ ok: false, errors: ["tour must be a JSON object"] });
-    expect(parseTour({ ...tour(), stops: [] })).toEqual({ ok: true, tour: tour({ stops: [] }) });
-    expect(parseTour({ ...tour(), stops: {} })).toEqual({ ok: false, errors: ["stops must be an array"] });
+    expect(parseTour({ ...tour(), tracks: [] })).toEqual({ ok: true, tour: tour({ tracks: [] }) });
+    expect(parseTour({ ...tour(), tracks: {} })).toEqual({ ok: false, errors: ["tracks must be an array (may be empty)"] });
+  });
+
+  test("validates each track", () => {
+    const result = parseTour({
+      ...tour(),
+      tracks: [track([]), { title: "No summary", stops: [stop()] }, "nope", { title: "t", summary: "s" }],
+    });
+    expect(result).toEqual({
+      ok: false,
+      errors: [
+        "tracks[0].stops must be a non-empty array",
+        "tracks[1].summary must be a non-empty string",
+        "tracks[2] must be an object",
+        "tracks[3].stops must be a non-empty array",
+      ],
+    });
+  });
+
+  test("rejects the legacy flat stops field", () => {
+    const { tracks: _, ...legacy } = tour();
+    expect(parseTour({ ...legacy, stops: [stop()] })).toEqual({
+      ok: false,
+      errors: ["stops is no longer supported; group stops under tracks[]", "tracks must be an array (may be empty)"],
+    });
+    expect(parseTour({ ...tour(), stops: [] })).toEqual({
+      ok: false,
+      errors: ["stops is no longer supported; group stops under tracks[]"],
+    });
+  });
+});
+
+describe("tourStops", () => {
+  test("numbers stops globally in track order", () => {
+    const first = track([stop({ title: "a" }), stop({ title: "b" })], { title: "One" });
+    const second = track([stop({ title: "c" })], { title: "Two" });
+    const third = track([stop({ title: "d" }), stop({ title: "e" })], { title: "Three" });
+    const stops = tourStops(tour({ tracks: [first, second, third] }));
+    expect(stops.map(({ number, stop, trackIndex }) => [number, stop.title, trackIndex])).toEqual([
+      [1, "a", 0],
+      [2, "b", 0],
+      [3, "c", 1],
+      [4, "d", 2],
+      [5, "e", 2],
+    ]);
+    expect(stops[2]!.track).toBe(second);
+    expect(tourStops(tour({ tracks: [] }))).toEqual([]);
+  });
+});
+
+describe("checkStopSize", () => {
+  test("flags stops longer than the limit with their global number", () => {
+    const sample = tour({
+      tracks: [
+        track([stop({ line: 1, endLine: MAX_STOP_LINES })]),
+        track([stop({ line: 5 }), stop({ line: 10, endLine: 10 + MAX_STOP_LINES, title: "Huge" })]),
+      ],
+    });
+    expect(checkStopSize(sample)).toEqual([
+      `stop 3 "Huge": spans ${MAX_STOP_LINES + 1} lines; split it into smaller stops (max ${MAX_STOP_LINES})`,
+    ]);
   });
 });
 
 describe("toSidecar", () => {
   const sample = tour({
-    stops: [
-      stop({ path: "b.ts", line: 3, title: "B first" }),
-      stop({ path: "a.ts", side: "old", line: 7, endLine: 9, kind: "blocker", title: "A old" }),
-      stop({ path: "b.ts", line: 20, kind: "question", title: "B again" }),
+    tracks: [
+      track(
+        [
+          stop({ path: "b.ts", line: 3, title: "B first" }),
+          stop({ path: "a.ts", side: "old", line: 7, endLine: 9, kind: "blocker", title: "A old" }),
+        ],
+        { title: "Retry loop" },
+      ),
+      track([stop({ path: "b.ts", line: 20, kind: "question", title: "B again" })], { title: "Config" }),
     ],
     skipped: [
       { path: "lock.json", reason: "generated" },
@@ -105,7 +190,7 @@ describe("toSidecar", () => {
     expect(b!.annotations[0]).toEqual({
       id: "stop-1",
       newRange: [3, 3],
-      summary: "1/3 [risk] B first",
+      summary: "1/3 [risk] Retry loop › B first",
       rationale: "Retries forever.\n\nAsk: Is unbounded retry acceptable?",
       tags: ["risk"],
       source: "guided-review",
@@ -113,12 +198,16 @@ describe("toSidecar", () => {
     });
     expect(a!.annotations[0]!.oldRange).toEqual([7, 9]);
     expect(a!.annotations[0]!.newRange).toBeUndefined();
-    expect(a!.annotations[0]!.summary).toBe("2/3 [blocker] A old");
+    expect(a!.annotations[0]!.summary).toBe("2/3 [blocker] Retry loop › A old");
+    expect(b!.annotations[1]!.summary).toBe("3/3 [question] Config › B again");
   });
 
-  test("top-level summary leads with the verdict", () => {
+  test("top-level summary leads with the verdict and lists tracks", () => {
     expect(doc.version).toBe(1);
-    expect(doc.summary).toBe("REQUEST-CHANGES · Add retries\n\nAdds retry logic.");
+    expect(doc.summary).toBe(
+      "REQUEST-CHANGES · Add retries\n\nAdds retry logic.\n\nTracks:\n1. Retry loop (stops 1-2)\n2. Config (stop 3)",
+    );
+    expect(toSidecar(tour({ tracks: [] })).summary).toBe("REQUEST-CHANGES · Add retries\n\nAdds retry logic.");
   });
 });
 
@@ -143,6 +232,11 @@ describe("checkAnchors", () => {
     const messages = checkAnchors(tour({ stops: [stop(), stop({ path: "src/util/helpers.ts", title: "Helper" })] }), ranges);
     expect(messages).toEqual(['stop 2 "Helper": path src/util/helpers.ts is not in the diff (did you mean lib/util/helpers.ts?)']);
     expect(checkAnchors(tour({ stops: [stop({ path: "nope.ts" })] }), ranges)[0]).toEndWith("is not in the diff");
+  });
+
+  test("numbers problems globally across tracks", () => {
+    const sample = tour({ tracks: [track([stop(), stop()]), track([stop({ line: 20, title: "Later" })])] });
+    expect(checkAnchors(sample, ranges)).toEqual(['stop 3 "Later": line 20 (new) is outside every hunk (hunks: 5-14, 30-40)']);
   });
 
   test("reports a line outside every hunk", () => {
