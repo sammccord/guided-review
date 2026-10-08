@@ -1,0 +1,9 @@
+{
+  "name": "hunk-guided-review",
+  "private": true,
+  "type": "module",
+  "hunk": {
+    "extensions": ["./index.tsx"],
+    "apiVersion": 25
+  }
+}
