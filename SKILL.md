@@ -69,6 +69,8 @@ Group the stops into tracks. A track is one thread the reviewer should hold in t
 
 The track `summary` is where relationships live. Say how its stops connect and what the reviewer should conclude after reading them together, such as "the runner commits on every path except the swap handler; stops 4 to 6 show the three paths". Name dependencies on other tracks ("assumes the Release contract from track 1").
 
+Link related stops. Give a stop an `id` (lowercase, digits, hyphens) and write `[[id]]` in another stop's `body` or `ask`, or in a track `summary`, wherever the reader needs the other location to judge this one: the producer a consumer depends on, the test that pins a behavior, the earlier abstraction a later caller misuses, the same pattern in another track. Links cross tracks freely; tracks group, links relate. The reviewer sees each link as `#7 title`, can follow it, and can come back. Link where the relationship changes a judgment, not between every pair of neighbors.
+
 Order tracks so each one only depends on tracks before it: the core abstraction first, then its consequences, then independent concerns. Within a track, order stops the way a reader follows the data or the call chain. Put the track holding the most severe blocker as early as those dependencies allow.
 
 ## 6. Write the tour
@@ -100,7 +102,7 @@ It validates the schema and confirms every anchor falls inside a hunk of `base..
 
 Hunk needs a real terminal, so the script opens one through herdr, tmux, or macOS Terminal/iTerm, whichever is available. Otherwise it prints the command for the user to run. Pass `--print` first to skip launching. It always prints a final `Tour command:` line.
 
-In hunk, the Tour pane on the right lists the tracks, each with its summary and its stops. `>` and `<` step through stops in tour order. `)` and `(` jump to the next or previous track. The current stop expands with its body and ask. The whole diff stays visible, with tour files sorted first. `{` and `}` jump between annotated hunks, `a` toggles the inline notes, and `c` adds the reviewer's own note.
+In hunk, the Tour pane on the right lists the tracks, each with its summary and its stops. `>` and `<` step through stops in tour order. `)` and `(` jump to the next or previous track. The current stop expands with its body, its ask, and its links in both directions. `L` follows a link and `B` goes back. The whole diff stays visible, with tour files sorted first. `{` and `}` jump between annotated hunks, `a` toggles the inline notes, and `c` adds the reviewer's own note.
 
 ## 9. Report
 
