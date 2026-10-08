@@ -16,11 +16,15 @@ import type {
   HunkExtensionAPI,
 } from "hunkdiff/extension";
 import {
+  initialCursor,
+  move,
   parseTour,
   validateTour,
   type Stop,
   type StopKind,
   type Tour,
+  type TourCursor,
+  type TourMove,
   type TourStop,
   type Track,
   type ValidateResult,
@@ -35,11 +39,10 @@ const USAGE = "usage: hunk tour check|open <tour.json>";
 interface TourState {
   tour: Tour | null;
   stops: readonly TourStop[];
-  /** Index into `stops`; -1 until the tour starts. */
-  current: number;
+  cursor: TourCursor;
 }
 
-let state: TourState = { tour: null, stops: [], current: -1 };
+let state: TourState = { tour: null, stops: [], cursor: initialCursor() };
 const listeners = new Set<() => void>();
 
 function setState(next: TourState) {
@@ -109,7 +112,7 @@ async function runTourCli(args: readonly string[], ctx: ExtensionCliCommandConte
   }
 
   const sidecarPath = await writeSidecar(tour);
-  setState({ tour, stops, current: -1 });
+  setState({ tour, stops, cursor: initialCursor() });
   return { kind: "delegate", argv: ["diff", `${tour.base}...${tour.head}`, "--agent-context", sidecarPath, "--agent-notes"] };
 }
 
@@ -132,12 +135,12 @@ function revealStop(
   navigation: ExtensionReviewNavigation,
   notify: (message: string, type?: ExtensionNotifyType) => void,
   fileId: string | undefined,
-  index: number,
+  cursor: TourCursor,
   missing: string,
 ) {
   const { tour, stops } = state;
-  const { number, stop, track, trackIndex } = stops[index]!;
-  setState({ tour, stops, current: index });
+  const { number, stop, track, trackIndex } = stops[cursor.current]!;
+  setState({ tour, stops, cursor });
   if (fileId === undefined) {
     notify(`Stop ${number}: ${stop.path} ${missing}`, "warning");
     return;
@@ -160,62 +163,20 @@ function locateForCommand(ctx: ExtensionCommandContext, stop: Stop): { fileId?: 
   return inReview ? { fileId: inReview.id, missing: "" } : { missing: "is not in this review" };
 }
 
-function requireTour(ctx: ExtensionCommandContext): boolean {
-  if (state.tour) return true;
-  ctx.notify("No tour loaded. Start one with `hunk tour open <tour.json>`.", "warning");
-  return false;
-}
-
-function goTo(ctx: ExtensionCommandContext, index: number) {
-  if (!requireTour(ctx)) return;
-  const { stops } = state;
-  if (index >= stops.length) {
-    ctx.notify(`End of tour (${stops.length} stops)`);
+function apply(ctx: ExtensionCommandContext, tourMove: TourMove) {
+  const { tour, stops, cursor } = state;
+  if (!tour) {
+    ctx.notify("No tour loaded. Start one with `hunk tour open <tour.json>`.", "warning");
     return;
   }
-  if (index < 0) {
-    ctx.notify("Already at the first stop");
+  const result = move(stops, tour.tracks.length, cursor, tourMove);
+  if (!result.ok) {
+    ctx.notify(result.reason);
     return;
   }
   if (!ctx.panes.isOpen(PANE_ID)) ctx.panes.open(PANE_ID);
-  const { fileId, missing } = locateForCommand(ctx, stops[index]!.stop);
-  revealStop(ctx.navigation, ctx.notify, fileId, index, missing);
-}
-
-function firstStopOfTrack(trackIndex: number): number {
-  return state.stops.findIndex((entry) => entry.trackIndex === trackIndex);
-}
-
-function goToNextTrack(ctx: ExtensionCommandContext) {
-  if (!requireTour(ctx)) return;
-  const { stops, current } = state;
-  const target = current < 0 ? 0 : stops[current]!.trackIndex + 1;
-  const index = firstStopOfTrack(target);
-  if (index < 0) {
-    ctx.notify(`Already in the last track (${state.tour!.tracks.length} tracks)`);
-    return;
-  }
-  goTo(ctx, index);
-}
-
-function goToPreviousTrack(ctx: ExtensionCommandContext) {
-  if (!requireTour(ctx)) return;
-  const { stops, current } = state;
-  if (current < 0) {
-    ctx.notify("Already at the first stop");
-    return;
-  }
-  const trackIndex = stops[current]!.trackIndex;
-  const trackStart = firstStopOfTrack(trackIndex);
-  if (current > trackStart) {
-    goTo(ctx, trackStart);
-    return;
-  }
-  if (trackIndex === 0) {
-    ctx.notify("Already in the first track");
-    return;
-  }
-  goTo(ctx, firstStopOfTrack(trackIndex - 1));
+  const { fileId, missing } = locateForCommand(ctx, stops[result.cursor.current]!.stop);
+  revealStop(ctx.navigation, ctx.notify, fileId, result.cursor, missing);
 }
 
 function kindColor(kind: StopKind, theme: ExtensionPaneTheme): string {
@@ -337,7 +298,8 @@ function TrackHeading({
 }
 
 function TourPane({ files, theme, actions }: ExtensionPaneProps): ReactNode {
-  const { tour, stops, current } = useTourState();
+  const { tour, stops, cursor } = useTourState();
+  const { current } = cursor;
   const scrollRef = useRef<ScrollBoxRenderable | null>(null);
 
   useEffect(() => {
@@ -347,8 +309,13 @@ function TourPane({ files, theme, actions }: ExtensionPaneProps): ReactNode {
   if (!tour) return <text content=" No tour loaded" fg={theme.muted} />;
 
   const select = (index: number) => {
+    const result = move(stops, tour.tracks.length, cursor, { kind: "goto", index });
+    if (!result.ok) {
+      actions.notify(result.reason);
+      return;
+    }
     const file = findFile(files, stops[index]!.stop);
-    revealStop(actions, actions.notify, file?.id, index, "is hidden by the file filter or not in this review");
+    revealStop(actions, actions.notify, file?.id, result.cursor, "is hidden by the file filter or not in this review");
   };
   const currentTrack = current >= 0 ? stops[current]!.trackIndex : -1;
 
@@ -429,9 +396,9 @@ export default function registerGuidedReview(hunk: HunkExtensionAPI) {
     component: TourPane,
   });
 
-  hunk.registerCommand({ id: "next", title: "Next tour stop", key: ">" }, (ctx) => goTo(ctx, state.current + 1));
-  hunk.registerCommand({ id: "prev", title: "Previous tour stop", key: "<" }, (ctx) => goTo(ctx, state.current - 1));
-  hunk.registerCommand({ id: "nextTrack", title: "Next tour track", key: ")" }, goToNextTrack);
-  hunk.registerCommand({ id: "prevTrack", title: "Previous tour track", key: "(" }, goToPreviousTrack);
-  hunk.registerCommand({ id: "start", title: "Restart tour" }, (ctx) => goTo(ctx, 0));
+  hunk.registerCommand({ id: "next", title: "Next tour stop", key: ">" }, (ctx) => apply(ctx, { kind: "next" }));
+  hunk.registerCommand({ id: "prev", title: "Previous tour stop", key: "<" }, (ctx) => apply(ctx, { kind: "prev" }));
+  hunk.registerCommand({ id: "nextTrack", title: "Next tour track", key: ")" }, (ctx) => apply(ctx, { kind: "nextTrack" }));
+  hunk.registerCommand({ id: "prevTrack", title: "Previous tour track", key: "(" }, (ctx) => apply(ctx, { kind: "prevTrack" }));
+  hunk.registerCommand({ id: "start", title: "Restart tour" }, (ctx) => apply(ctx, { kind: "restart" }));
 }
