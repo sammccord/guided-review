@@ -67,7 +67,7 @@ Leave out style preferences, naming, "I would have done it differently", hypothe
 
 Group the stops into tracks. A track is one thread the reviewer should hold in their head at once: a causal chain (a new abstraction and each caller migrated onto it), a single concern that spans files (every place the rate limiter is committed or rolled back), or one subsystem. A stop belongs to exactly one track. Usually 2 to 6 tracks. A small tour may use one track, a tour with no stops has no tracks, and a track with one stop is fine when the point really stands alone.
 
-The track `summary` is where relationships live. Say how its stops connect and what the reviewer should conclude after reading them together, such as "the runner commits on every path except the swap handler; stops 4 to 6 show the three paths". Name dependencies on other tracks ("assumes the Release contract from track 1").
+The track `summary` is where relationships live, as bullets like the stop bodies. Say how its stops connect and what the reviewer should conclude after reading them together, such as "the runner commits on every path except the swap handler; stops 4 to 6 show the three paths". Name dependencies on other tracks ("assumes the Release contract from track 1").
 
 Link related stops. Give a stop an `id` (lowercase, digits, hyphens) and write `[[id]]` in another stop's `body` or `ask`, or in a track `summary`, wherever the reader needs the other location to judge this one: the producer a consumer depends on, the test that pins a behavior, the earlier abstraction a later caller misuses, the same pattern in another track. Links cross tracks freely; tracks group, links relate. The reviewer sees each link as `#7 title`, can follow it, and can come back. Link where the relationship changes a judgment, not between every pair of neighbors.
 
@@ -79,7 +79,13 @@ Write the tour to `tourPath` from step 1. It sits beside the worktree, not insid
 
 - `base` and `head` are the SHAs from step 1.
 - Anchor each stop on lines of the reviewed diff. Use `side: "new"` with new-file line numbers, or `side: "old"` for code that was deleted. `endLine` covers a short range that stays inside one `@@` range of `git diff <base>...<head>`. Adjacent changed lines can belong to different `@@` ranges.
-- `body` is plain text. Say what changed, why it matters, and the evidence: callers, the trace, the test you ran, or what you could not verify.
+- Write `body`, the tour `summary`, and track summaries as short bullet points, one fact per line, each line starting with `- `. No paragraphs. Aim for 2 to 5 bullets of under 15 words each. Drop filler and restated code.
+- `body` covers what changed, why it matters, and the evidence: callers, the trace, the test you ran, or what you could not verify. For example:
+  ```
+  - Defers RollbackOnErr after Enforce; never calls Commit.
+  - Broadcast error after network submit refunds the count. Unlike [[send-commit]].
+  - Traced; mocked test passes. No live broadcast run.
+  ```
 - `ask` is one concrete decision, phrased so the reviewer can answer it after reading the stop. "Is a 30s timeout acceptable for EU traffic?" is a good ask. "Please review" is not. Stops split from one finding ask narrower questions, such as what to confirm at this spot.
 - `verdict` is your recommendation: `approve`, `request-changes`, or `discuss`.
 - `scope.checked` and `scope.unchecked` say what you verified and what you did not. Be specific ("ran `pkg/policy` tests: pass", "did not exercise the migration against production-sized data"). A check that failed and passed on a rerun with a workaround goes in `checked` with both results; the unresolved cause goes in `unchecked`.
@@ -92,7 +98,7 @@ From the worktree:
 hunk --extension <skill>/extension tour check <tour.json>
 ```
 
-It validates the schema and confirms every anchor falls inside a hunk of `base...head`. Fix every reported stop and rerun until it prints `ok`. Split any stop it warns about.
+It validates the schema and confirms every anchor falls inside a hunk of `base...head`. Fix every reported stop and rerun until it prints `ok`. Then clear every warning: split oversized stops and rewrite paragraphs as bullets.
 
 ## 8. Open it
 

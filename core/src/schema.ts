@@ -19,7 +19,7 @@ export interface Stop {
   endLine?: number;
   kind: StopKind;
   title: string;
-  /** What changed here and why it matters. Plain text; may reference other stops as `[[id]]`. */
+  /** What changed here and why it matters. Plain text, `- ` bullet lines; may reference other stops as `[[id]]`. */
   body: string;
   /** The decision only the human can make at this stop. May reference other stops as `[[id]]`. */
   ask: string;
@@ -28,7 +28,7 @@ export interface Stop {
 /** Stops that only make sense together: one causal chain, one subsystem, or one concern. */
 export interface Track {
   title: string;
-  /** How the stops in this track relate, and why the reviewer should read them together. Plain text; may reference stops as `[[id]]`. */
+  /** How the stops in this track relate, and why the reviewer should read them together. Plain text, `- ` bullet lines; may reference stops as `[[id]]`. */
   summary: string;
   stops: Stop[];
 }
@@ -55,7 +55,7 @@ export interface Tour {
   base: string;
   head: string;
   verdict: Verdict;
-  /** Intent of the change and the bottom line. Plain text. */
+  /** Intent of the change and the bottom line. Plain text, `- ` bullet lines. */
   summary: string;
   scope: { checked: string[]; unchecked: string[] };
   /** Track order, then stop order within each track, is the tour order. */
