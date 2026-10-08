@@ -7,14 +7,14 @@ export function stop(overrides: Partial<Stop> = {}): Stop {
     line: 10,
     kind: "risk",
     title: "Retry loop",
-    body: "Retries forever.",
+    body: "- Retries forever.",
     ask: "Is unbounded retry acceptable?",
     ...overrides,
   };
 }
 
 export function track(stops: Stop[], overrides: Partial<Track> = {}): Track {
-  return { title: "Retries", summary: "How retry is wired.", stops, ...overrides };
+  return { title: "Retries", summary: "- How retry is wired.", stops, ...overrides };
 }
 
 /** Accepts a flat stop list as shorthand for a single-track tour. */
@@ -25,7 +25,7 @@ export function tour({ stops, ...overrides }: Partial<Tour> & { stops?: Stop[] }
     base: "aaa",
     head: "bbb",
     verdict: "request-changes",
-    summary: "Adds retry logic.",
+    summary: "- Adds retry logic.",
     scope: { checked: ["unit tests"], unchecked: ["load"] },
     tracks: [track(stops ?? [stop()])],
     skipped: [],

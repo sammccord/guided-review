@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { MAX_STOP_LINES, checkStopSize, tourStops } from "../src/index";
+import { MAX_STOP_LINES, checkBullets, checkStopSize, tourStops } from "../src/index";
 import { stop, tour, track } from "./fixtures";
 
 describe("tourStops", () => {
@@ -30,6 +30,21 @@ describe("checkStopSize", () => {
     });
     expect(checkStopSize(sample)).toEqual([
       `stop 3 "Huge": spans ${MAX_STOP_LINES + 1} lines; split it into smaller stops (max ${MAX_STOP_LINES})`,
+    ]);
+  });
+});
+
+describe("checkBullets", () => {
+  test("accepts bullet prose and flags paragraphs in summary, track summary, and body", () => {
+    expect(checkBullets(tour())).toEqual([]);
+    const sample = tour({
+      summary: "Adds retries.",
+      tracks: [track([stop({ body: "- ok\n\n  - indented ok" }), stop({ title: "Para", body: "- ok\nThen a sentence." })], { summary: "Plain." })],
+    });
+    expect(checkBullets(sample)).toEqual([
+      'summary: write it as "- " bullet lines',
+      'track 1 "Retries" summary: write it as "- " bullet lines',
+      'stop 2 "Para" body: write it as "- " bullet lines',
     ]);
   });
 });

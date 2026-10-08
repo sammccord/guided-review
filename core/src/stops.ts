@@ -19,3 +19,20 @@ export function checkStopSize(tour: Tour): string[] {
     return [`stop ${number} "${stop.title}": spans ${span} lines; split it into smaller stops (max ${MAX_STOP_LINES})`];
   });
 }
+
+function nonBulletLine(text: string): boolean {
+  return text.split("\n").some((line) => line.trim() !== "" && !line.trimStart().startsWith("- "));
+}
+
+/** Advisory messages for prose written as paragraphs instead of `- ` bullet lines; never blocks opening. */
+export function checkBullets(tour: Tour): string[] {
+  const hint = 'write it as "- " bullet lines';
+  const warnings = nonBulletLine(tour.summary) ? [`summary: ${hint}`] : [];
+  tour.tracks.forEach((track, index) => {
+    if (nonBulletLine(track.summary)) warnings.push(`track ${index + 1} "${track.title}" summary: ${hint}`);
+  });
+  for (const { number, stop } of tourStops(tour)) {
+    if (nonBulletLine(stop.body)) warnings.push(`stop ${number} "${stop.title}" body: ${hint}`);
+  }
+  return warnings;
+}

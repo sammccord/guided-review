@@ -34,7 +34,7 @@ describe("toSidecar", () => {
       id: "stop-1",
       newRange: [3, 3],
       summary: "1/3 [risk] Retry loop › B first",
-      rationale: "Retries forever.\n\nAsk: Is unbounded retry acceptable?",
+      rationale: "- Retries forever.\n\nAsk: Is unbounded retry acceptable?",
       tags: ["risk"],
       source: "guided-review",
       author: "guided-review",
@@ -48,9 +48,9 @@ describe("toSidecar", () => {
   test("top-level summary leads with the verdict and lists tracks", () => {
     expect(doc.version).toBe(1);
     expect(doc.summary).toBe(
-      "REQUEST-CHANGES · Add retries\n\nAdds retry logic.\n\nTracks:\n1. Retry loop (stops 1-2)\n2. Config (stop 3)",
+      "REQUEST-CHANGES · Add retries\n\n- Adds retry logic.\n\nTracks:\n1. Retry loop (stops 1-2)\n2. Config (stop 3)",
     );
-    expect(toSidecar(tour({ tracks: [] })).summary).toBe("REQUEST-CHANGES · Add retries\n\nAdds retry logic.");
+    expect(toSidecar(tour({ tracks: [] })).summary).toBe("REQUEST-CHANGES · Add retries\n\n- Adds retry logic.");
   });
 
   test("links render as number, quoted title, and location in rationale and track summaries", () => {
@@ -72,7 +72,7 @@ describe("toSidecar", () => {
       'Breaks #1 "Release contract" (a.ts:4).\n\nAsk: Commit like #3 "Sign commits" (c.ts:30)?',
     );
     expect(linked.summary).toBe(
-      "REQUEST-CHANGES · Add retries\n\nAdds retry logic.\n\nTracks:\n" +
+      "REQUEST-CHANGES · Add retries\n\n- Adds retry logic.\n\nTracks:\n" +
         "1. Contract (stops 1-2)\n" +
         '   Read #1 "Release contract" (a.ts:4) before #3 "Sign commits" (c.ts:30).\n' +
         "2. Sign (stop 3)",
