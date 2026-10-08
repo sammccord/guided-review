@@ -73,7 +73,7 @@ Order tracks so each one only depends on tracks before it: the core abstraction 
 
 ## 6. Write the tour
 
-Write the tour to `tourPath` from step 1. It sits beside the worktree, not inside it. The schema is the `Tour`, `Track`, and `Stop` types in [`extension/tour.ts`](extension/tour.ts). Read them before writing.
+Write the tour to `tourPath` from step 1. It sits beside the worktree, not inside it. The schema is the `Tour`, `Track`, and `Stop` types in [`core/src/schema.ts`](core/src/schema.ts). Read them before writing.
 
 - `base` and `head` are the SHAs from step 1.
 - Anchor each stop on lines of the reviewed diff. Use `side: "new"` with new-file line numbers, or `side: "old"` for code that was deleted. `endLine` covers a short range that stays inside one `@@` range of `git diff <base>...<head>`. Adjacent changed lines can belong to different `@@` ranges.
