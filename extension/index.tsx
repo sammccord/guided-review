@@ -231,6 +231,8 @@ function kindColor(kind: StopKind, theme: ExtensionPaneTheme): string {
       return theme.fileModified;
     case "question":
       return theme.accent;
+    case "inspect":
+      return theme.badgeNeutral;
     case "context":
       return theme.muted;
   }

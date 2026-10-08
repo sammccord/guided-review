@@ -3,7 +3,7 @@ import type { AgentAnnotation, AgentFileContext } from "hunkdiff/extension";
 
 export const TOUR_VERSION = 1;
 
-export const STOP_KINDS = ["blocker", "risk", "question", "context"] as const;
+export const STOP_KINDS = ["blocker", "risk", "question", "inspect", "context"] as const;
 export const VERDICTS = ["approve", "request-changes", "discuss"] as const;
 
 export type StopKind = (typeof STOP_KINDS)[number];

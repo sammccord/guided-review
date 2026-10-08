@@ -61,6 +61,11 @@ describe("parseTour", () => {
     }
   });
 
+  test("accepts an inspect stop", () => {
+    const input = tour({ stops: [stop({ kind: "inspect" })] });
+    expect(parseTour(input)).toEqual({ ok: true, tour: input });
+  });
+
   test("collects every error with a location", () => {
     const result = parseTour({
       version: 2,
@@ -86,7 +91,7 @@ describe("parseTour", () => {
         "tracks[1].stops[1].side must be one of new, old",
         "tracks[1].stops[1].line must be a positive integer",
         "tracks[1].stops[2].endLine must be >= line",
-        "tracks[1].stops[2].kind must be one of blocker, risk, question, context",
+        "tracks[1].stops[2].kind must be one of blocker, risk, question, inspect, context",
         "skipped must be an array (may be empty)",
       ]);
     }
