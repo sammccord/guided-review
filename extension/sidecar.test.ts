@@ -52,4 +52,30 @@ describe("toSidecar", () => {
     );
     expect(toSidecar(tour({ tracks: [] })).summary).toBe("REQUEST-CHANGES · Add retries\n\nAdds retry logic.");
   });
+
+  test("links render as number, quoted title, and location in rationale and track summaries", () => {
+    const linked = toSidecar(
+      tour({
+        tracks: [
+          track(
+            [
+              stop({ id: "release", path: "a.ts", line: 4, title: "Release contract" }),
+              stop({ path: "b.ts", line: 9, body: "Breaks [[release]].", ask: "Commit like [[sign]]?" }),
+            ],
+            { title: "Contract", summary: "Read [[release]] before [[sign]]." },
+          ),
+          track([stop({ id: "sign", path: "c.ts", side: "old", line: 30, title: "Sign commits" })], { title: "Sign" }),
+        ],
+      }),
+    );
+    expect(linked.files[1]!.annotations[0]!.rationale).toBe(
+      'Breaks #1 "Release contract" (a.ts:4).\n\nAsk: Commit like #3 "Sign commits" (c.ts:30)?',
+    );
+    expect(linked.summary).toBe(
+      "REQUEST-CHANGES · Add retries\n\nAdds retry logic.\n\nTracks:\n" +
+        "1. Contract (stops 1-2)\n" +
+        '   Read #1 "Release contract" (a.ts:4) before #3 "Sign commits" (c.ts:30).\n' +
+        "2. Sign (stop 3)",
+    );
+  });
 });

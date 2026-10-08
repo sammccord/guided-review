@@ -2,7 +2,7 @@ import { writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { useEffect, useRef, useSyncExternalStore, type ReactNode } from "react";
-import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core";
+import { TextAttributes, type MouseEvent, type ScrollBoxRenderable } from "@opentui/core";
 import type {
   ExtensionCliCommandContext,
   ExtensionCliCommandResult,
@@ -16,10 +16,14 @@ import type {
   HunkExtensionAPI,
 } from "hunkdiff/extension";
 import {
+  formatLink,
+  indexStops,
   initialCursor,
   move,
+  segmentText,
   validateTour,
   type Stop,
+  type StopIndex,
   type StopKind,
   type Tour,
   type TourCursor,
@@ -38,10 +42,11 @@ const USAGE = "usage: hunk tour check|open <tour.json>";
 interface TourState {
   tour: Tour | null;
   stops: readonly TourStop[];
+  links: StopIndex;
   cursor: TourCursor;
 }
 
-let state: TourState = { tour: null, stops: [], cursor: initialCursor() };
+let state: TourState = { tour: null, stops: [], links: indexStops([]), cursor: initialCursor() };
 const listeners = new Set<() => void>();
 
 function setState(next: TourState) {
@@ -92,7 +97,7 @@ async function runTourCli(args: readonly string[], ctx: ExtensionCliCommandConte
     await writeLines(ctx.stderr, result.errors);
     return { kind: "exit", code: 1 };
   }
-  const { tour, stops, warnings } = result;
+  const { tour, stops, index, warnings } = result;
   await writeLines(ctx.stderr, warnings.map((message) => `warning: ${message}`));
 
   if (subcommand === "check") {
@@ -104,7 +109,7 @@ async function runTourCli(args: readonly string[], ctx: ExtensionCliCommandConte
   }
 
   const sidecarPath = await writeSidecar(tour);
-  setState({ tour, stops, cursor: initialCursor() });
+  setState({ tour, stops, links: index, cursor: initialCursor() });
   return { kind: "delegate", argv: ["diff", `${tour.base}...${tour.head}`, "--agent-context", sidecarPath, "--agent-notes"] };
 }
 
@@ -123,23 +128,29 @@ function stopLocation(stop: Stop): string {
   return `${stop.path}:${lines}${stop.side === "old" ? " (old)" : ""}`;
 }
 
+type DescribeStop = (entry: TourStop) => string;
+
+const describeStop: DescribeStop = ({ number, stop, track, trackIndex }) =>
+  `Stop ${number}/${state.stops.length} · Track ${trackIndex + 1}/${state.tour?.tracks.length ?? 0} ${track.title}: ${stop.title}`;
+
+const describeBack: DescribeStop = ({ number, stop }) => `Back to stop ${number}/${state.stops.length}: ${stop.title}`;
+
 function revealStop(
   navigation: ExtensionReviewNavigation,
   notify: (message: string, type?: ExtensionNotifyType) => void,
   fileId: string | undefined,
   cursor: TourCursor,
   missing: string,
+  describe: DescribeStop = describeStop,
 ) {
-  const { tour, stops } = state;
-  const { number, stop, track, trackIndex } = stops[cursor.current]!;
-  setState({ tour, stops, cursor });
+  const entry = state.stops[cursor.current]!;
+  setState({ ...state, cursor });
   if (fileId === undefined) {
-    notify(`Stop ${number}: ${stop.path} ${missing}`, "warning");
+    notify(`Stop ${entry.number}: ${entry.stop.path} ${missing}`, "warning");
     return;
   }
-  navigation.revealLine(fileId, stop.side, stop.line);
-  const trackCount = tour?.tracks.length ?? 0;
-  notify(`Stop ${number}/${stops.length} · Track ${trackIndex + 1}/${trackCount} ${track.title}: ${stop.title}`);
+  navigation.revealLine(fileId, entry.stop.side, entry.stop.line);
+  notify(describe(entry));
 }
 
 /** Hosts before API 26 lack `selection.files`; their snapshot lists filtered files too, and revealLine warns for those. */
@@ -155,7 +166,7 @@ function locateForCommand(ctx: ExtensionCommandContext, stop: Stop): { fileId?: 
   return inReview ? { fileId: inReview.id, missing: "" } : { missing: "is not in this review" };
 }
 
-function apply(ctx: ExtensionCommandContext, tourMove: TourMove) {
+function apply(ctx: ExtensionCommandContext, tourMove: TourMove, describe: DescribeStop = describeStop) {
   const { tour, stops, cursor } = state;
   if (!tour) {
     ctx.notify("No tour loaded. Start one with `hunk tour open <tour.json>`.", "warning");
@@ -168,7 +179,35 @@ function apply(ctx: ExtensionCommandContext, tourMove: TourMove) {
   }
   if (!ctx.panes.isOpen(PANE_ID)) ctx.panes.open(PANE_ID);
   const { fileId, missing } = locateForCommand(ctx, stops[result.cursor.current]!.stop);
-  revealStop(ctx.navigation, ctx.notify, fileId, result.cursor, missing);
+  revealStop(ctx.navigation, ctx.notify, fileId, result.cursor, missing, describe);
+}
+
+async function followLink(ctx: ExtensionCommandContext) {
+  const { tour, links, cursor } = state;
+  if (!tour) {
+    ctx.notify("No tour loaded. Start one with `hunk tour open <tour.json>`.", "warning");
+    return;
+  }
+  if (cursor.current < 0) {
+    ctx.notify("No current stop. Press > to start the tour.");
+    return;
+  }
+  const choices = [
+    ...links.linksFrom(cursor.current).map((target) => ({ label: `→ ${formatLink(target)}`, target })),
+    ...links.linksTo(cursor.current).map((target) => ({ label: `← ${formatLink(target)}`, target })),
+  ];
+  if (choices.length === 0) {
+    ctx.notify("This stop has no links");
+    return;
+  }
+  let target = choices[0]!.target;
+  if (choices.length > 1) {
+    const picked = await ctx.dialogs.select({ title: "Follow a link", options: choices.map(({ label }) => label) });
+    const choice = choices.find(({ label }) => label === picked);
+    if (!choice) return;
+    target = choice.target;
+  }
+  apply(ctx, { kind: "follow", index: target.number - 1 });
 }
 
 function kindColor(kind: StopKind, theme: ExtensionPaneTheme): string {
@@ -224,19 +263,99 @@ function Bullets({ items, theme, empty }: { items: readonly string[]; theme: Ext
   );
 }
 
+function LinkedText({
+  text,
+  links,
+  fg,
+  bg,
+  theme,
+  prefix = "",
+  attributes = TextAttributes.NONE,
+}: {
+  text: string;
+  links: StopIndex;
+  fg: string;
+  bg?: string;
+  theme: ExtensionPaneTheme;
+  prefix?: string;
+  attributes?: number;
+}) {
+  return (
+    <text fg={fg} bg={bg} wrapMode="word" attributes={attributes}>
+      {prefix ? <span fg={fg}>{prefix}</span> : null}
+      {segmentText(text, links).map((segment, index) =>
+        segment.kind === "text" ? (
+          <span key={index} fg={fg}>
+            {segment.text}
+          </span>
+        ) : (
+          <span key={index} fg={theme.accent} attributes={attributes | TextAttributes.UNDERLINE}>
+            {formatLink(segment.target)}
+          </span>
+        ),
+      )}
+    </text>
+  );
+}
+
+function LinkRows({
+  label,
+  arrow,
+  targets,
+  bg,
+  theme,
+  onFollow,
+}: {
+  label: string;
+  arrow: string;
+  targets: readonly TourStop[];
+  bg: string;
+  theme: ExtensionPaneTheme;
+  onFollow: (target: TourStop) => void;
+}) {
+  if (targets.length === 0) return null;
+  const follow = (target: TourStop) => (event: MouseEvent) => {
+    event.stopPropagation();
+    onFollow(target);
+  };
+  return (
+    <box style={{ flexDirection: "column", marginTop: 1, backgroundColor: bg }}>
+      <text content={label} fg={theme.muted} bg={bg} attributes={TextAttributes.BOLD} />
+      {targets.map((target) => (
+        <box key={target.number} style={{ backgroundColor: bg }} onMouseDown={follow(target)}>
+          <text bg={bg} wrapMode="word">
+            <span fg={theme.accent}>{`${arrow} `}</span>
+            <span fg={theme.accent} attributes={TextAttributes.UNDERLINE}>
+              {formatLink(target)}
+            </span>
+            <span fg={theme.muted}>{`  ${target.stop.path}:${target.stop.line}`}</span>
+          </text>
+        </box>
+      ))}
+    </box>
+  );
+}
+
 function StopRow({
   stop,
   index,
   current,
+  related,
+  links,
   theme,
   onSelect,
+  onFollow,
 }: {
   stop: Stop;
   /** Global position in the tour, 0-based. */
   index: number;
   current: boolean;
+  /** Links to or from the current stop. */
+  related: boolean;
+  links: StopIndex;
   theme: ExtensionPaneTheme;
   onSelect: () => void;
+  onFollow: (target: TourStop) => void;
 }) {
   const bg = current ? theme.selectedHunk : theme.panel;
   return (
@@ -244,6 +363,7 @@ function StopRow({
       <box style={{ paddingLeft: 1, paddingRight: 1, backgroundColor: bg }}>
         <text fg={theme.text} bg={bg} wrapMode="word" attributes={current ? TextAttributes.BOLD : TextAttributes.NONE}>
           <span fg={theme.text}>{`${current ? "▸" : " "}${index + 1}. `}</span>
+          {related ? <span fg={theme.accent}>{"↔ "}</span> : null}
           <span fg={kindColor(stop.kind, theme)}>{`[${stop.kind}] `}</span>
           <span fg={theme.text}>{stop.title}</span>
         </text>
@@ -253,10 +373,20 @@ function StopRow({
       </box>
       {current ? (
         <box style={{ flexDirection: "column", paddingLeft: 5, paddingRight: 1, paddingBottom: 1, backgroundColor: bg }}>
-          <text content={stop.body} fg={theme.text} bg={bg} wrapMode="word" />
+          <LinkedText text={stop.body} links={links} fg={theme.text} bg={bg} theme={theme} />
           <box style={{ marginTop: 1, backgroundColor: bg }}>
-            <text content={`Ask: ${stop.ask}`} fg={theme.noteBorder} bg={bg} wrapMode="word" attributes={TextAttributes.BOLD} />
+            <LinkedText
+              text={stop.ask}
+              links={links}
+              prefix="Ask: "
+              fg={theme.noteBorder}
+              bg={bg}
+              theme={theme}
+              attributes={TextAttributes.BOLD}
+            />
           </box>
+          <LinkRows label="Links" arrow="→" targets={links.linksFrom(index)} bg={bg} theme={theme} onFollow={onFollow} />
+          <LinkRows label="Linked from" arrow="←" targets={links.linksTo(index)} bg={bg} theme={theme} onFollow={onFollow} />
         </box>
       ) : null}
     </box>
@@ -267,11 +397,13 @@ function TrackHeading({
   track,
   trackIndex,
   current,
+  links,
   theme,
 }: {
   track: Track;
   trackIndex: number;
   current: boolean;
+  links: StopIndex;
   theme: ExtensionPaneTheme;
 }) {
   return (
@@ -283,14 +415,14 @@ function TrackHeading({
         </text>
       </box>
       <box style={{ paddingLeft: 2, paddingRight: 1 }}>
-        <text content={track.summary} fg={theme.muted} wrapMode="word" />
+        <LinkedText text={track.summary} links={links} fg={theme.muted} theme={theme} />
       </box>
     </box>
   );
 }
 
 function TourPane({ files, theme, actions }: ExtensionPaneProps): ReactNode {
-  const { tour, stops, cursor } = useTourState();
+  const { tour, stops, links, cursor } = useTourState();
   const { current } = cursor;
   const scrollRef = useRef<ScrollBoxRenderable | null>(null);
 
@@ -300,16 +432,18 @@ function TourPane({ files, theme, actions }: ExtensionPaneProps): ReactNode {
 
   if (!tour) return <text content=" No tour loaded" fg={theme.muted} />;
 
-  const select = (index: number) => {
-    const result = move(stops, tour.tracks.length, cursor, { kind: "goto", index });
+  const go = (tourMove: TourMove) => {
+    const result = move(stops, tour.tracks.length, cursor, tourMove);
     if (!result.ok) {
       actions.notify(result.reason);
       return;
     }
-    const file = findFile(files, stops[index]!.stop);
+    const file = findFile(files, stops[result.cursor.current]!.stop);
     revealStop(actions, actions.notify, file?.id, result.cursor, "is hidden by the file filter or not in this review");
   };
+  const follow = (target: TourStop) => go({ kind: "follow", index: target.number - 1 });
   const currentTrack = current >= 0 ? stops[current]!.trackIndex : -1;
+  const related = new Set(current >= 0 ? [...links.linksFrom(current), ...links.linksTo(current)] : []);
 
   return (
     <scrollbox
@@ -344,7 +478,13 @@ function TourPane({ files, theme, actions }: ExtensionPaneProps): ReactNode {
         ) : null}
         {tour.tracks.map((track, trackIndex) => (
           <box key={trackIndex} style={{ flexDirection: "column", backgroundColor: theme.panel }}>
-            <TrackHeading track={track} trackIndex={trackIndex} current={trackIndex === currentTrack} theme={theme} />
+            <TrackHeading
+              track={track}
+              trackIndex={trackIndex}
+              current={trackIndex === currentTrack}
+              links={links}
+              theme={theme}
+            />
             {stops.map((entry, index) =>
               entry.trackIndex === trackIndex ? (
                 <StopRow
@@ -352,8 +492,11 @@ function TourPane({ files, theme, actions }: ExtensionPaneProps): ReactNode {
                   stop={entry.stop}
                   index={index}
                   current={index === current}
+                  related={related.has(entry)}
+                  links={links}
                   theme={theme}
-                  onSelect={() => select(index)}
+                  onSelect={() => go({ kind: "goto", index })}
+                  onFollow={follow}
                 />
               ) : null,
             )}
@@ -393,4 +536,8 @@ export default function registerGuidedReview(hunk: HunkExtensionAPI) {
   hunk.registerCommand({ id: "nextTrack", title: "Next tour track", key: ")" }, (ctx) => apply(ctx, { kind: "nextTrack" }));
   hunk.registerCommand({ id: "prevTrack", title: "Previous tour track", key: "(" }, (ctx) => apply(ctx, { kind: "prevTrack" }));
   hunk.registerCommand({ id: "start", title: "Restart tour" }, (ctx) => apply(ctx, { kind: "restart" }));
+  hunk.registerCommand({ id: "links", title: "Follow a link from this stop", key: "L" }, followLink);
+  hunk.registerCommand({ id: "back", title: "Back to previous stop", key: "B" }, (ctx) =>
+    apply(ctx, { kind: "back" }, describeBack),
+  );
 }
