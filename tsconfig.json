@@ -28,5 +28,5 @@
     "noUnusedLocals": false,
     "noUnusedParameters": false
   },
-  "include": ["extension/**/*.ts", "extension/**/*.tsx"]
+  "include": ["core/**/*.ts", "extension/**/*.ts", "extension/**/*.tsx"]
 }

@@ -16,19 +16,18 @@ import type {
   HunkExtensionAPI,
 } from "hunkdiff/extension";
 import {
-  checkAnchors,
-  checkStopSize,
   parseTour,
-  readDiffRanges,
-  toSidecar,
-  tourStops,
+  validateTour,
   type Stop,
   type StopKind,
   type Tour,
   type TourStop,
   type Track,
+  type ValidateResult,
   type Verdict,
-} from "./tour";
+} from "../core/src/index";
+import { readDiffRanges } from "../core/src/git";
+import { toSidecar } from "./sidecar";
 
 const PANE_ID = "tour";
 const USAGE = "usage: hunk tour check|open <tour.json>";
@@ -62,9 +61,7 @@ async function writeLines(writer: ExtensionCliWriter, lines: readonly string[]) 
   if (lines.length > 0) await writer.write(`${lines.join("\n")}\n`);
 }
 
-type LoadResult = { ok: true; tour: Tour } | { ok: false; errors: string[] };
-
-async function loadAndCheck(file: string, cwd: string): Promise<LoadResult> {
+async function loadAndCheck(file: string, cwd: string): Promise<ValidateResult> {
   const path = resolve(cwd, file);
   let raw: unknown;
   try {
@@ -76,8 +73,7 @@ async function loadAndCheck(file: string, cwd: string): Promise<LoadResult> {
   if (!parsed.ok) return parsed;
   try {
     const ranges = await readDiffRanges(cwd, parsed.tour.base, parsed.tour.head);
-    const problems = checkAnchors(parsed.tour, ranges);
-    return problems.length > 0 ? { ok: false, errors: problems } : parsed;
+    return validateTour(raw, ranges);
   } catch (error) {
     return { ok: false, errors: [error instanceof Error ? error.message : String(error)] };
   }
@@ -101,9 +97,8 @@ async function runTourCli(args: readonly string[], ctx: ExtensionCliCommandConte
     await writeLines(ctx.stderr, result.errors);
     return { kind: "exit", code: 1 };
   }
-  const { tour } = result;
-  const stops = tourStops(tour);
-  await writeLines(ctx.stderr, checkStopSize(tour).map((message) => `warning: ${message}`));
+  const { tour, stops, warnings } = result;
+  await writeLines(ctx.stderr, warnings.map((message) => `warning: ${message}`));
 
   if (subcommand === "check") {
     const fileCount = new Set(stops.map(({ stop }) => stop.path)).size;
