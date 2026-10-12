@@ -1,6 +1,6 @@
 ---
 name: guided-review
-description: Audit a pull request or branch, pick the changes that need human judgment, and open them as an ordered, annotated tour of small stops grouped into tracks in the Hunk diff viewer. Use for "guided review", "tour this PR", "review tour", "walk me through this PR", or a PR link or branch name with a request to review it in hunk. Not for posting review comments to GitHub.
+description: Audit a pull request, a stack of pull requests, or a branch, pick the changes that need human judgment, and open them as ordered, annotated tours of small stops grouped into tracks in the Hunk diff viewer, one tour per stack layer. Use for "guided review", "tour this PR", "review tour", "walk me through this PR", or a PR link or branch name with a request to review it in hunk. Not for posting review comments to GitHub.
 ---
 
 # Guided review
@@ -21,10 +21,26 @@ Requires `git`, `python3`, `hunk` 0.22 or newer, and `gh` authenticated for the 
 Run from inside a clone of the repository under review. If the user is elsewhere, find the clone or `gh repo clone` it first.
 
 ```bash
-<skill>/scripts/prepare.sh <pr-url | pr-number | branch> [base-ref]
+<skill>/scripts/prepare.py <pr-url | pr-number | branch> [base-ref]
 ```
 
-It fetches the change, creates branch `review/<slug>` in a worktree under `.git/guided-review/`, and prints JSON with `worktree`, `tourPath`, `base`, `head`, `title`, `url`, `description`, `stat`, and `commits`. The user's checkout is untouched. Read code from the worktree, not the user's checkout. Every diff in this skill is `git diff <base>...<head>`.
+It checks whether the PR is a layer of a GitHub stack (the stacked-PR chain the `gh stack` extension manages), fetches every open layer, and prints JSON:
+
+- `stack` is the whole stack, bottom layer first, or `null`. `stackLookup` says `found`, `none`, `not-a-pr`, or why the lookup was `unavailable`.
+- `reviews` has one entry per open layer, bottom first, or a single entry when there is no stack. Each entry has its own `worktree`, `tourPath`, `base`, `head`, `title`, `url`, `description`, `stat`, `commits`, and `stack`.
+
+Each review gets branch `review/<slug>` in a worktree under `.git/guided-review/`. The user's checkout is untouched. Read code from the review's worktree, not the user's checkout. Every diff in this skill is `git diff <base>...<head>` for one review. In a stack, a layer's `base` is the head of the layer below, so each diff holds only that layer's work.
+
+### Stacks
+
+When `reviews` has more than one entry, run steps 2 to 7 once per review and write one tour per layer. Never merge layers into one tour.
+
+- Go bottom to top. A layer may rely on the layers below it, so read their tours or diffs for context, but judge only the layer's own diff.
+- A problem introduced in a lower layer belongs in that layer's tour, even when you notice it while reading a higher one. Link nothing across tours; mention the other layer by PR number instead.
+- Ask whether the split itself is sound: a layer that does not build or does not make sense without the layer above is a finding for the lower layer's tour.
+- If your host can run parallel subagents, give each layer its own reviewer with its review entry and the stack, then check that their findings land in the right layer.
+- The stop budget applies to each layer separately. Size it to the layer: a two-file layer may need only a few stops.
+- Merged layers get no tour. They appear in the stack list for context.
 
 ## 2. State the intent
 
@@ -78,6 +94,7 @@ Order tracks so each one only depends on tracks before it: the core abstraction 
 Write the tour to `tourPath` from step 1. It sits beside the worktree, not inside it. The schema is the `Tour`, `Track`, and `Stop` types in [`core/src/schema.ts`](core/src/schema.ts). Read them before writing.
 
 - `base` and `head` are the SHAs from step 1.
+- `stack` is the review entry's `stack` from step 1, copied as is. Omit it when it is `null`.
 - Anchor each stop on lines of the reviewed diff. Use `side: "new"` with new-file line numbers, or `side: "old"` for code that was deleted. `endLine` covers a short range that stays inside one `@@` range of `git diff <base>...<head>`. Adjacent changed lines can belong to different `@@` ranges.
 - Write `body`, the tour `summary`, and track summaries as short bullet points, one fact per line, each line starting with `- `. No paragraphs. Aim for 2 to 5 bullets of under 15 words each. Drop filler and restated code.
 - `body` covers what changed, why it matters, and the evidence: callers, the trace, the test you ran, or what you could not verify. For example:
@@ -106,10 +123,14 @@ It validates the schema and confirms every anchor falls inside a hunk of `base..
 <skill>/scripts/open-tour.sh <worktree> <tour.json>
 ```
 
+Run it once per review. For a stack, open the layers bottom first; each gets its own terminal tab labelled `review pr-<n>`.
+
 Hunk needs a real terminal, so the script opens one through herdr, tmux, or macOS Terminal/iTerm, whichever is available. Otherwise it prints the command for the user to run. Pass `--print` first to skip launching. It always prints a final `Tour command:` line.
 
-In hunk, the Tour pane on the right lists the tracks, each with its summary and its stops. `>` and `<` step through stops in tour order. `)` and `(` jump to the next or previous track. The current stop expands with its body, its ask, and its links in both directions. `L` follows a link and `B` goes back. The whole diff stays visible, with tour files sorted first. `{` and `}` jump between annotated hunks, `a` toggles the inline notes, and `c` adds the reviewer's own note.
+In hunk, the Tour pane on the right lists the tracks, each with its summary and its stops. `>` and `<` step through stops in tour order. `)` and `(` jump to the next or previous track. The current stop expands with its body, its ask, and its links in both directions. `L` follows a link and `B` goes back. A stacked tour also lists every layer of the stack under the verdict and marks the one under review. The whole diff stays visible, with tour files sorted first. `{` and `}` jump between annotated hunks, `a` toggles the inline notes, and `c` adds the reviewer's own note.
 
 ## 9. Report
 
-Reply with the verdict and the intent statement. List the tracks, each with a one-line summary and its stops, one line each as number, `kind`, title, and `path:line`. If you used fewer stops than the budget, say why. Include the unchecked scope, the `Tour command:` line (`open-tour.sh --print` gives it without opening a terminal), and cleanup with `git worktree remove <worktree> && git branch -D <branch>`.
+For a stack, start with the stack number and one line per layer (PR, verdict, stop count), then give the full report below for each layer, bottom first.
+
+Reply with the verdict and the intent statement. List the tracks, each with a one-line summary and its stops, one line each as number, `kind`, title, and `path:line`. If you used fewer stops than the budget, say why. Include the unchecked scope, the `Tour command:` line (`open-tour.sh --print` gives it without opening a terminal), and cleanup with `git worktree remove <worktree> && git branch -D <branch>` for each review.

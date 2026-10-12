@@ -35,6 +35,7 @@ shquote() {
 [[ -f "${positional[1]}" ]] || { echo "no such tour file: ${positional[1]}" >&2; exit 2; }
 DIR="$(abspath "${positional[0]}")"
 TOUR="$(abspath "${positional[1]}")"
+LABEL="review $(basename "$DIR")"
 EXT="$(abspath "$(dirname "$0")/../extension")"
 
 (cd "$DIR" && hunk --extension "$EXT" tour check "$TOUR")
@@ -45,7 +46,7 @@ FULL="cd $(shquote "$DIR") && $CMD"
 launch() {
   if [[ -n "${HERDR_SOCKET_PATH:-}" ]] && command -v herdr >/dev/null 2>&1; then
     local created pane
-    created="$(herdr tab create --cwd "$DIR" --label review --focus)"
+    created="$(herdr tab create --cwd "$DIR" --label "$LABEL" --focus)"
     if command -v python3 >/dev/null 2>&1; then
       pane="$(printf '%s' "$created" | python3 -c 'import json,sys; print(json.load(sys.stdin)["result"]["root_pane"]["pane_id"])')"
     else
@@ -58,8 +59,8 @@ launch() {
   fi
 
   if [[ -n "${TMUX:-}" ]]; then
-    tmux new-window -n review -c "$DIR" "$CMD"
-    echo "Opened tour in tmux window 'review'"
+    tmux new-window -n "$LABEL" -c "$DIR" "$CMD"
+    echo "Opened tour in tmux window '$LABEL'"
     return 0
   fi
 
