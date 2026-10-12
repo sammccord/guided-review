@@ -21,13 +21,16 @@ import {
   initialCursor,
   move,
   segmentText,
+  stackPosition,
   validateTour,
+  type StackLayer,
   type Stop,
   type StopIndex,
   type StopKind,
   type Tour,
   type TourCursor,
   type TourMove,
+  type TourStack,
   type TourStop,
   type Track,
   type ValidateResult,
@@ -102,8 +105,13 @@ async function runTourCli(args: readonly string[], ctx: ExtensionCliCommandConte
 
   if (subcommand === "check") {
     const fileCount = new Set(stops.map(({ stop }) => stop.path)).size;
+    let stackSuffix = "";
+    if (tour.stack) {
+      const { index, total } = stackPosition(tour.stack);
+      stackSuffix = ` · stack #${tour.stack.number} layer ${index}/${total}`;
+    }
     await writeLines(ctx.stdout, [
-      `ok: ${stops.length} stops in ${tour.tracks.length} tracks across ${fileCount} files, verdict ${tour.verdict}`,
+      `ok: ${stops.length} stops in ${tour.tracks.length} tracks across ${fileCount} files, verdict ${tour.verdict}${stackSuffix}`,
     ]);
     return { kind: "exit", code: 0 };
   }
@@ -442,6 +450,39 @@ function TrackHeading({
   );
 }
 
+function StackLayerRow({ layer, current, theme }: { layer: StackLayer; current: boolean; theme: ExtensionPaneTheme }) {
+  const status = current ? "reviewing" : layer.state;
+  const fg = current || layer.state === "open" ? theme.text : theme.muted;
+  return (
+    <box style={{ flexDirection: "row", paddingLeft: 2, paddingRight: 1 }}>
+      <text content={`${current ? "▸" : " "} `} fg={current ? theme.accent : fg} attributes={current ? TextAttributes.BOLD : TextAttributes.NONE} />
+      <box style={{ flexGrow: 1, flexShrink: 1 }}>
+        <text fg={fg} wrapMode="word" attributes={current ? TextAttributes.BOLD : TextAttributes.NONE}>
+          <span fg={fg}>{`#${layer.number} ${layer.title}`}</span>
+          <span fg={current ? theme.accent : theme.muted}>{`  ${status}`}</span>
+        </text>
+      </box>
+    </box>
+  );
+}
+
+function StackBlock({ stack, theme }: { stack: TourStack; theme: ExtensionPaneTheme }) {
+  const { index, total } = stackPosition(stack);
+  return (
+    <box style={{ flexDirection: "column", marginTop: 1 }}>
+      <box style={{ paddingLeft: 1, paddingRight: 1 }}>
+        <text wrapMode="word">
+          <span fg={theme.accent} attributes={TextAttributes.BOLD}>{`Stack #${stack.number}`}</span>
+          <span fg={theme.muted}>{` · layer ${index}/${total}`}</span>
+        </text>
+      </box>
+      {stack.layers.map((layer) => (
+        <StackLayerRow key={layer.number} layer={layer} current={layer.number === stack.current} theme={theme} />
+      ))}
+    </box>
+  );
+}
+
 function TourPane({ files, theme, actions }: ExtensionPaneProps): ReactNode {
   const { tour, stops, links, cursor } = useTourState();
   const { current } = cursor;
@@ -487,6 +528,7 @@ function TourPane({ files, theme, actions }: ExtensionPaneProps): ReactNode {
         <box style={{ paddingLeft: 1 }}>
           <text content={tour.verdict.toUpperCase()} fg={verdictColor(tour.verdict, theme)} attributes={TextAttributes.BOLD} />
         </box>
+        {tour.stack ? <StackBlock stack={tour.stack} theme={theme} /> : null}
         <box style={{ marginTop: 1, paddingLeft: 1, paddingRight: 1 }}>
           <BulletedText text={tour.summary} links={links} fg={theme.text} theme={theme} />
         </box>

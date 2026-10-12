@@ -82,4 +82,71 @@ describe("parseTour", () => {
       errors: ["stops is no longer supported; group stops under tracks[]"],
     });
   });
+
+  describe("stack", () => {
+    const layers = [
+      { number: 10, title: "base", state: "merged" },
+      { number: 11, title: "middle", url: "https://example.com/pr/11", state: "open" },
+      { number: 12, title: "top", state: "closed" },
+    ] as const;
+    const stack = { number: 9, url: "https://example.com/stack/9", current: 11, layers };
+
+    test("accepts a valid stack and leaves stackless tours unchanged", () => {
+      const input = { ...tour(), stack };
+      expect(parseTour(input)).toEqual({ ok: true, tour: tour({ stack: { ...stack, layers: [...layers] } }) });
+      const result = parseTour(tour());
+      expect(result.ok && "stack" in result.tour).toBe(false);
+    });
+
+    test("current may be a closed layer", () => {
+      expect(parseTour({ ...tour(), stack: { ...stack, current: 12 } }).ok).toBe(true);
+    });
+
+    test("collects every stack error with a location", () => {
+      const result = parseTour({
+        ...tour(),
+        stack: {
+          number: 0,
+          url: "",
+          current: 99,
+          layers: [
+            { number: 10, title: "base", state: "merged" },
+            "nope",
+            { number: 10, title: "", url: 3, state: "draft" },
+            { number: 1.5, title: "t", state: "open" },
+          ],
+        },
+      });
+      expect(result).toEqual({
+        ok: false,
+        errors: [
+          "stack.number must be a positive integer",
+          "stack.url must be a non-empty string when present",
+          "stack.layers[1] must be an object",
+          "stack.layers[2].title must be a non-empty string",
+          "stack.layers[2].url must be a non-empty string when present",
+          "stack.layers[2].state must be one of open, merged, closed",
+          "stack.layers[3].number must be a positive integer",
+          "stack.layers[2].number 10 duplicates stack.layers[0]",
+          "stack.current 99 is not one of the stack's layers",
+        ],
+      });
+    });
+
+    test("rejects a merged current layer, empty layers, and non-objects", () => {
+      expect(parseTour({ ...tour(), stack: { ...stack, current: 10 } })).toEqual({
+        ok: false,
+        errors: ["stack.current 10 is already merged; review an open layer"],
+      });
+      expect(parseTour({ ...tour(), stack: { number: 9, current: 1, layers: [] } })).toEqual({
+        ok: false,
+        errors: ["stack.layers must be a non-empty array"],
+      });
+      expect(parseTour({ ...tour(), stack: { number: 9, current: "11", layers } })).toEqual({
+        ok: false,
+        errors: ["stack.current must be a positive integer"],
+      });
+      expect(parseTour({ ...tour(), stack: [] })).toEqual({ ok: false, errors: ["stack must be an object when present"] });
+    });
+  });
 });

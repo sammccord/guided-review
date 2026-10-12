@@ -78,4 +78,17 @@ describe("toSidecar", () => {
         "2. Sign (stop 3)",
     );
   });
+
+  test("a stack adds its position and neighbours under the verdict line", () => {
+    const layers = [
+      { number: 1, title: "base", state: "merged" as const },
+      { number: 2, title: "middle", state: "open" as const },
+      { number: 3, title: "top", state: "open" as const },
+    ];
+    const summary = (current: number) => toSidecar(tour({ tracks: [], stack: { number: 9, current, layers } })).summary;
+    expect(summary(2)).toBe(
+      "REQUEST-CHANGES · Add retries\nStack #9 · layer 2/3 · PR #2\nBuilds on #1 base\nFollowed by #3 top\n\n- Adds retry logic.",
+    );
+    expect(summary(3)).toBe("REQUEST-CHANGES · Add retries\nStack #9 · layer 3/3 · PR #3\nBuilds on #2 middle\n\n- Adds retry logic.");
+  });
 });

@@ -1,5 +1,14 @@
 import type { AgentAnnotation, AgentFileContext } from "hunkdiff/extension";
-import { indexStops, segmentText, tourStops, type StopIndex, type Tour, type TourStop } from "../core/src/index";
+import {
+  indexStops,
+  segmentText,
+  stackPosition,
+  tourStops,
+  type StopIndex,
+  type Tour,
+  type TourStack,
+  type TourStop,
+} from "../core/src/index";
 
 export interface SidecarDocument {
   version: 1;
@@ -29,6 +38,14 @@ function stopAnnotation({ number, stop, track }: TourStop, total: number, index:
     source: "guided-review",
     author: "guided-review",
   };
+}
+
+function stackLines(stack: TourStack): string {
+  const { index, total, below, above } = stackPosition(stack);
+  const lines = [`Stack #${stack.number} · layer ${index}/${total} · PR #${stack.current}`];
+  if (below) lines.push(`Builds on #${below.number} ${below.title}`);
+  if (above) lines.push(`Followed by #${above.number} ${above.title}`);
+  return lines.map((line) => `\n${line}`).join("");
 }
 
 /** Files ordered by first stop, one entry per file, so hunk's sidebar and `{`/`}` follow the tour. */
@@ -66,10 +83,11 @@ export function toSidecar(tour: Tour): SidecarDocument {
     return linked === track.summary ? line : `${line}\n   ${linked}`;
   });
   const tracks = trackLines.length > 0 ? `\n\nTracks:\n${trackLines.join("\n")}` : "";
+  const stack = tour.stack ? stackLines(tour.stack) : "";
 
   return {
     version: 1,
-    summary: `${tour.verdict.toUpperCase()} · ${tour.title}\n\n${tour.summary}${tracks}`,
+    summary: `${tour.verdict.toUpperCase()} · ${tour.title}${stack}\n\n${tour.summary}${tracks}`,
     files,
   };
 }

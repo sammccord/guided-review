@@ -46,6 +46,26 @@ export interface SkippedFile {
   reason: string;
 }
 
+export const STACK_LAYER_STATES = ["open", "merged", "closed"] as const;
+export type StackLayerState = (typeof STACK_LAYER_STATES)[number];
+
+/** One pull request in a stack, bottom (closest to trunk) first. */
+export interface StackLayer {
+  number: number;
+  title: string;
+  url?: string;
+  state: StackLayerState;
+}
+
+/** The stack this tour's pull request belongs to. Each open layer gets its own tour. */
+export interface TourStack {
+  number: number;
+  url?: string;
+  /** PR number of the layer this tour reviews; must be one of `layers`. */
+  current: number;
+  layers: StackLayer[];
+}
+
 /** The tour an agent writes and the extension presents. Single source of truth. */
 export interface Tour {
   version: typeof TOUR_VERSION;
@@ -61,6 +81,8 @@ export interface Tour {
   /** Track order, then stop order within each track, is the tour order. */
   tracks: Track[];
   skipped: SkippedFile[];
+  /** Present when the reviewed pull request is one layer of a stack. */
+  stack?: TourStack;
 }
 
 export type ParseResult = { ok: true; tour: Tour } | { ok: false; errors: string[] };
@@ -237,6 +259,66 @@ function parseSkipped(raw: unknown, at: string, c: Collector): SkippedFile {
   return { path: c.string(raw, "path", `${at}.`), reason: c.string(raw, "reason", `${at}.`) };
 }
 
+function parseLayer(raw: unknown, at: string, c: Collector): StackLayer {
+  if (!isObject(raw)) {
+    c.errors.push(`${at} must be an object`);
+    return { number: 0, title: "", state: "open" };
+  }
+  const prefix = `${at}.`;
+  let number = 0;
+  if (isPositiveInteger(raw.number)) number = raw.number;
+  else c.errors.push(`${prefix}number must be a positive integer`);
+  const title = c.string(raw, "title", prefix);
+  let url: string | undefined;
+  if (raw.url !== undefined) {
+    if (isNonEmptyString(raw.url)) url = raw.url;
+    else c.errors.push(`${prefix}url must be a non-empty string when present`);
+  }
+  const state = c.member(STACK_LAYER_STATES, raw, "state", prefix);
+  return { number, title, ...(url === undefined ? {} : { url }), state };
+}
+
+function parseStack(raw: unknown, c: Collector): TourStack | undefined {
+  if (!isObject(raw)) {
+    c.errors.push("stack must be an object when present");
+    return undefined;
+  }
+  let number = 0;
+  if (isPositiveInteger(raw.number)) number = raw.number;
+  else c.errors.push("stack.number must be a positive integer");
+  let url: string | undefined;
+  if (raw.url !== undefined) {
+    if (isNonEmptyString(raw.url)) url = raw.url;
+    else c.errors.push("stack.url must be a non-empty string when present");
+  }
+
+  let layers: StackLayer[] = [];
+  if (!Array.isArray(raw.layers) || raw.layers.length === 0) {
+    c.errors.push("stack.layers must be a non-empty array");
+  } else {
+    layers = raw.layers.map((layer, index) => parseLayer(layer, `stack.layers[${index}]`, c));
+    const seen = new Map<number, number>();
+    layers.forEach((layer, index) => {
+      if (layer.number === 0) return;
+      const first = seen.get(layer.number);
+      if (first === undefined) seen.set(layer.number, index);
+      else c.errors.push(`stack.layers[${index}].number ${layer.number} duplicates stack.layers[${first}]`);
+    });
+  }
+
+  let current = 0;
+  if (!isPositiveInteger(raw.current)) {
+    c.errors.push("stack.current must be a positive integer");
+  } else {
+    current = raw.current;
+    const layer = layers.find((candidate) => candidate.number === current);
+    if (layers.length > 0 && !layer) c.errors.push(`stack.current ${current} is not one of the stack's layers`);
+    else if (layer?.state === "merged") c.errors.push(`stack.current ${current} is already merged; review an open layer`);
+  }
+
+  return { number, ...(url === undefined ? {} : { url }), current, layers };
+}
+
 /** Validate untrusted JSON into a Tour. Collects every error instead of stopping at the first. */
 export function parseTour(raw: unknown): ParseResult {
   if (!isObject(raw)) return { ok: false, errors: ["tour must be a JSON object"] };
@@ -280,6 +362,8 @@ export function parseTour(raw: unknown): ParseResult {
     skipped = raw.skipped.map((item, index) => parseSkipped(item, `skipped[${index}]`, c));
   }
 
+  const stack = raw.stack === undefined ? undefined : parseStack(raw.stack, c);
+
   if (c.errors.length > 0) return { ok: false, errors: c.errors };
   return {
     ok: true,
@@ -294,6 +378,7 @@ export function parseTour(raw: unknown): ParseResult {
       scope,
       tracks,
       skipped,
+      ...(stack === undefined ? {} : { stack }),
     },
   };
 }
