@@ -103,10 +103,10 @@ Because `tour check` and `tour open` run `git diff <base>...<head>` in the curre
 To load the extension in every Hunk session without `--extension`, install it into Hunk:
 
 ```bash
-hunk extension install /path/to/guided-review
+hunk extension install sammccord/guided-review
 ```
 
-The source can also be `sammccord/guided-review` or a git URL. Hunk clones the source into `~/.config/hunk/extensions/installed/<name>`, where `<name>` is the source folder's name, so a local clone named `guided-review` installs as `guided-review`. Hunk clones committed history, so uncommitted changes in a local clone are not installed. After that, `hunk tour check tour.json` and `hunk tour open tour.json` work without `--extension`.
+The source can also be a git URL or a local clone (`hunk extension install /path/to/guided-review`). Hunk clones the source into `~/.config/hunk/extensions/installed/<name>`, where `<name>` is the source folder's name, so a local clone named `guided-review` installs as `guided-review`. Hunk clones committed history, so uncommitted changes in a local clone are not installed. After that, `hunk tour check tour.json` and `hunk tour open tour.json` work without `--extension`.
 
 The skill always passes `--extension <skill directory>`, so an agent install does not need `hunk extension install`.
 
