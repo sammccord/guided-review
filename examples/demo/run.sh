@@ -17,7 +17,11 @@ for arg in "$@"; do
 done
 
 command -v git >/dev/null 2>&1 || { echo "git is required" >&2; exit 1; }
-command -v hunk >/dev/null 2>&1 || { echo "hunk is required: npm i -g hunkdiff" >&2; exit 1; }
+command -v hunk >/dev/null 2>&1 || {
+  echo "hunk is required: curl -fsSL https://hunk.dev/install.sh | sh, brew install hunk, or npm i -g hunkdiff" >&2
+  echo "See https://github.com/modem-dev/hunk#install" >&2
+  exit 1
+}
 
 DEMO="$(cd "$(dirname "$0")" && pwd -P)"
 ROOT="$(cd "$DEMO/../.." && pwd -P)"

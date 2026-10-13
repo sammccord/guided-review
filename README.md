@@ -77,7 +77,7 @@ The same stops also appear in the diff as inline notes:
 
 ## Requirements
 
-- `hunk` 0.22.0 or newer. Install it with `brew install hunk` or `npm i -g hunkdiff`.
+- `hunk` 0.22.0 or newer. Install it with `curl -fsSL https://hunk.dev/install.sh | sh`, `brew install hunk`, or `npm i -g hunkdiff`. [Hunk's install guide](https://github.com/modem-dev/hunk#install) lists the other methods.
 - `git`.
 - `python3`, for `scripts/prepare.py`.
 - `gh`, authenticated for the PR's host, to review pull requests. Branch reviews work without it.
