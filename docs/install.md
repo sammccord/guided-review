@@ -2,7 +2,37 @@
 
 This guide installs the `guided-review` skill for your coding agent, sets up the Hunk extension on its own, and fixes common problems. It assumes `git`, `python3`, `gh`, and `hunk` 0.22.0 or newer are on your `PATH`.
 
-## Install the skill with `scripts/install.sh`
+## Install the skill with `npx skills`
+
+The [skills CLI](https://github.com/vercel-labs/skills) installs the skill from GitHub without a clone. It needs Node.js.
+
+1. Install:
+
+	```bash
+	npx skills add sammccord/guided-review -g
+	```
+
+	Keep `-g`. Without it, the CLI installs into the current project instead of your user directories.
+
+2. Pick the agents when prompted. To skip the prompt, name the agents and add `-y`:
+
+	```bash
+	npx skills add sammccord/guided-review -g -a claude-code -a opencode -y
+	```
+
+The CLI copies the repository, without `.git`, to `~/.agents/skills/guided-review`. Agents that read `~/.agents/skills`, such as opencode and Codex, use that copy. Agents that do not, such as Claude Code, get a symlink to it. The folder is named `guided-review`, which the agents and Hunk both need. The CLI records the source and commit in `~/.agents/.skill-lock.json`.
+
+The CLI sends install telemetry. To opt out, set `DISABLE_TELEMETRY=1` or `DO_NOT_TRACK=1` before the command.
+
+To check the install, list the global skills:
+
+```bash
+npx skills ls -g
+```
+
+## Install from a clone with `scripts/install.sh`
+
+Use a clone when you change the skill, or when Node.js is not available. The script symlinks the clone, so edits take effect at once. If you installed with `npx skills` before, remove that install first, so the agent loads only one copy.
 
 1. Clone the repository. The folder name must be `guided-review`:
 
@@ -112,6 +142,12 @@ The skill always passes `--extension <skill directory>`, so an agent install doe
 
 ## Upgrade
 
+- For an `npx skills` install, run:
+
+	```bash
+	npx skills update -g
+	```
+
 - For a symlinked install, pull the clone:
 
 	```bash
@@ -135,7 +171,13 @@ The skill always passes `--extension <skill directory>`, so an agent install doe
 
 ## Uninstall
 
-1. Remove the skill from every agent directory the script knows:
+1. Remove the skill. For an `npx skills` install, run:
+
+	```bash
+	npx skills remove guided-review -g
+	```
+
+	For a clone install, remove it from every agent directory the script knows:
 
 	```bash
 	scripts/install.sh --uninstall

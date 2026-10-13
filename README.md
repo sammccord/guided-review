@@ -83,38 +83,28 @@ The same stops also appear in the diff as inline tour notes:
 - `git`.
 - `python3`, for `scripts/prepare.py`.
 - `gh`, authenticated for the PR's host, to review pull requests. Branch reviews work without it.
+- Node.js, for `npx skills`. A clone install with `scripts/install.sh` works without it.
 - An agent host that loads skills from a directory, such as opencode, Claude Code, or Codex.
 
 ## Quick start
 
-1. Clone the repository into a folder named `guided-review`:
+1. Install the skill with the [skills CLI](https://github.com/vercel-labs/skills):
 
 	```bash
-	git clone https://github.com/sammccord/guided-review.git
-	cd guided-review
+	npx skills add sammccord/guided-review -g
 	```
 
-2. Install the skill for every agent whose config directory exists:
+	The command asks which agents to install for. To skip the prompt, name them, such as `-a claude-code -a opencode -y`. The skill lands in `~/.agents/skills/guided-review`. Agents that read that directory use it there. The others get a symlink to it. No clone is needed.
+
+2. Open the demo tour. The demo needs no pull request, `gh`, or agent:
 
 	```bash
-	scripts/install.sh
+	~/.agents/skills/guided-review/examples/demo/run.sh
 	```
 
-3. Open the demo tour. The demo needs no pull request, `gh`, or agent:
+	The script opens Hunk in a new terminal tab or window, because Hunk needs a real terminal. Inside [herdr](https://herdr.dev), a terminal workspace manager, it opens a herdr tab. Inside tmux it opens a tmux window. Otherwise, on macOS, it opens an iTerm2 or Terminal.app window. With none of those, it prints the command. To print the command and run it yourself instead, add `--print --keep`.
 
-	```bash
-	examples/demo/run.sh
-	```
-
-	The script opens Hunk in a new terminal tab or window, because Hunk needs a real terminal. Inside [herdr](https://herdr.dev), a terminal workspace manager, it opens a herdr tab. Inside tmux it opens a tmux window. Otherwise, on macOS, it opens an iTerm2 or Terminal.app window. With none of those, it prints the command. To print the command and run it yourself instead, use `--print --keep`:
-
-	```bash
-	examples/demo/run.sh --print --keep
-	```
-
-	With `bun` installed, `bun run demo` runs the same script.
-
-4. Ask your agent for a review:
+3. Ask your agent for a review:
 
 	```text
 	guided review of https://github.com/<owner>/<repo>/pull/<number>
@@ -122,15 +112,19 @@ The same stops also appear in the diff as inline tour notes:
 
 	The agent works in a clone of the repository under review. Start it from inside that clone, or it looks for one or runs `gh repo clone`. Add a stop budget to change the depth, such as `quick`, `deep`, or `12 stops`.
 
+To update the skill, run `npx skills update -g`. To remove it, run `npx skills remove guided-review -g`. [docs/install.md](docs/install.md) covers installing from a clone, telemetry, and troubleshooting.
+
 ## Open a tour you wrote
 
 Run `hunk tour check` and `hunk tour open` from inside the repository the tour reviews, because both run `git diff` in the current directory. To check and open a tour file you wrote or kept from an earlier review:
 
 ```bash
 cd /path/to/reviewed-repo
-hunk --extension /path/to/guided-review tour check tour.json
-hunk --extension /path/to/guided-review tour open tour.json
+hunk --extension ~/.agents/skills/guided-review tour check tour.json
+hunk --extension ~/.agents/skills/guided-review tour open tour.json
 ```
+
+With a clone install, pass the clone's path to `--extension` instead.
 
 `tour check` prints an `ok:` line when the tour is valid. `tour open` starts Hunk in the current terminal. [Tour file format](docs/tour-format.md) lists every field and every rule.
 
@@ -175,7 +169,7 @@ Clicking a stop in the **Tour** pane jumps to it. Clicking a link row follows th
 
 ## Development
 
-Development needs [Bun](https://bun.sh).
+Development needs [Bun](https://bun.sh). Work from a clone, and install the skill from it with `scripts/install.sh`, which symlinks the clone into each agent's skill directory so your edits take effect at once. Remove an `npx skills` install first, so the agent loads only one copy.
 
 ```bash
 bun install                # install type packages and test dependencies

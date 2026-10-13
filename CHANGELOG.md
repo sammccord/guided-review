@@ -2,6 +2,12 @@
 
 This file lists all notable changes to this project. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Changed
+
+- The README and install guide lead with `npx skills add sammccord/guided-review -g`, which installs the skill without a clone. The clone and `scripts/install.sh` route remains for contributors.
+
 ## 0.1.0 - 2026-10-13
 
 ### Added
