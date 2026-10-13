@@ -14,7 +14,7 @@ The reviewer's time is the scarce resource. Do the exhaustive reading yourself, 
 
 `<skill>` below means the directory containing this file.
 
-Requires `git`, `python3`, `hunk` 0.22 or newer, and `gh` authenticated for the PR's host (`gh auth status`). GitHub Enterprise works because nothing goes through `hunk gh`.
+Requires `git`, `python3`, `hunk` 0.22 or newer, and `gh` authenticated for the PR's host (`gh auth status --hostname <host>`). GitHub Enterprise works because nothing goes through `hunk gh`.
 
 ## 1. Prepare the worktree
 
@@ -29,7 +29,7 @@ It checks whether the PR is a layer of a GitHub stack (the stacked-PR chain the 
 - `stack` is the whole stack, bottom layer first, or `null`. `stackLookup` says `found`, `none`, `not-a-pr`, or why the lookup was `unavailable`.
 - `reviews` has one entry per open layer, bottom first, or a single entry when there is no stack. Each entry has its own `worktree`, `tourPath`, `base`, `head`, `title`, `url`, `description`, `stat`, `commits`, and `stack`.
 
-Each review gets branch `review/<slug>` in a worktree under `.git/guided-review/`. The user's checkout is untouched. Read code from the review's worktree, not the user's checkout. Every diff in this skill is `git diff <base>...<head>` for one review. In a stack, a layer's `base` is the head of the layer below, so each diff holds only that layer's work.
+Each review gets branch `review/<slug>` in a worktree under `.git/guided-review/`. The user's checkout is untouched. Read code from the review's worktree, not the user's checkout. Every diff in this skill is `git diff <base>...<head>` for one review. In a stack, a layer's `base` is the lower-layer commit it was built on, so each diff holds only that layer's work. With `needsRebase` that commit is older than the lower layer's current head.
 
 ### Stacks
 
