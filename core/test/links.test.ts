@@ -121,6 +121,19 @@ describe("parseTour references", () => {
     ]);
   });
 
+  test("the tour summary may link any stop and reports unknown ids first", () => {
+    const ok = tour({ summary: "- Start at [[swap-commit]].", tracks: [track([stop({ id: "swap-commit" })])] });
+    expect(errorsOf(ok)).toEqual([]);
+    const bad = tour({
+      summary: "- Start at [[swap-comit]], then [[swap-comit]].",
+      tracks: [track([stop({ id: "swap-commit", body: "See [[nope]]." })])],
+    });
+    expect(errorsOf(bad)).toEqual([
+      "summary references unknown stop [[swap-comit]] (did you mean [[swap-commit]]?)",
+      "tracks[0].stops[0].body references unknown stop [[nope]]",
+    ]);
+  });
+
   test("a stop may not reference itself; repeats report once", () => {
     const input = tour({ stops: [stop({ id: "loop", body: "[[loop]] and [[loop]]", ask: "[[loop]]?" })] });
     expect(errorsOf(input)).toEqual([

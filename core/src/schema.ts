@@ -220,7 +220,7 @@ function closestId(id: string, candidates: Iterable<string>): string | undefined
   return best;
 }
 
-function checkReferences(tracks: readonly Track[], c: Collector) {
+function checkReferences(summary: string, tracks: readonly Track[], c: Collector) {
   const owners = new Map<string, string>();
   tracks.forEach((track, t) =>
     track.stops.forEach((stop, s) => {
@@ -242,6 +242,7 @@ function checkReferences(tracks: readonly Track[], c: Collector) {
       }
     }
   };
+  check(summary, "summary");
   tracks.forEach((track, t) => {
     check(track.summary, `tracks[${t}].summary`);
     track.stops.forEach((stop, s) => {
@@ -352,7 +353,7 @@ export function parseTour(raw: unknown): ParseResult {
     c.errors.push("tracks must be an array (may be empty)");
   } else {
     tracks = raw.tracks.map((track, index) => parseTrack(track, `tracks[${index}]`, c));
-    checkReferences(tracks, c);
+    checkReferences(summary, tracks, c);
   }
 
   let skipped: SkippedFile[] = [];

@@ -17,7 +17,7 @@ One place the reviewer must look. A stop's position in its track's `stops` array
 
 | Field | Type | Required | Rules |
 | --- | --- | --- | --- |
-| `id` | string | no | Must match `^[a-z0-9][a-z0-9-]*$`, so lowercase letters, digits, and hyphens, starting with a letter or digit. Unique across the tour. Other stops and track summaries reference it as `[[id]]`. |
+| `id` | string | no | Must match `^[a-z0-9][a-z0-9-]*$`, so lowercase letters, digits, and hyphens, starting with a letter or digit. Unique across the tour. Other stops, track summaries, and the tour summary reference it as `[[id]]`. |
 | `path` | string | yes | Non-empty. The path as git reports it, which is the new path, or the old path for a deleted file. A renamed file uses its new path. |
 | `side` | `"new"` \| `"old"` | yes | `"new"` for new-file line numbers. `"old"` for deleted code, with old-file line numbers. |
 | `line` | number | yes | Positive integer. First line of the anchor. |
@@ -99,7 +99,7 @@ The top-level object.
 | `base` | string | yes | Non-empty. A commit SHA or ref that `git` resolves in the directory where `tour check` runs. |
 | `head` | string | yes | Non-empty. Same as `base`. The reviewed diff is `git diff <base>...<head>`. |
 | `verdict` | string | yes | One of `approve`, `request-changes`, `discuss` (`VERDICTS`). |
-| `summary` | string | yes | Non-empty. The intent of the change and the bottom line, as `- ` bullet lines. |
+| `summary` | string | yes | Non-empty. The intent of the change and the bottom line, as `- ` bullet lines. May contain `[[id]]` links. |
 | `scope` | object | yes | An object with `checked` and `unchecked`, both arrays of strings. Either array may be empty. |
 | `scope.checked` | `string[]` | yes | What the agent verified. |
 | `scope.unchecked` | `string[]` | yes | What the agent did not verify. |
@@ -113,10 +113,9 @@ A top-level `stops` array is an error: `stops is no longer supported; group stop
 
 A link is `[[id]]`, where `id` is a stop's `id`. The text between the brackets cannot contain `[`, `]`, or a newline.
 
-- `parseTour` checks links in every track `summary`, stop `body`, and stop `ask`. A link to an unknown id is an error. When a known id is close in spelling, the message suggests it, as in `references unknown stop [[atempt-loop]] (did you mean [[attempt-loop]]?)`.
+- `parseTour` checks links in the tour `summary` and in every track `summary`, stop `body`, and stop `ask`. A link to an unknown id is an error. When a known id is close in spelling, the message suggests it, as in `references unknown stop [[atempt-loop]] (did you mean [[attempt-loop]]?)`.
 - A stop that links to its own `id` is an error.
-- Links in the tour `summary` are not checked.
-- The links listed under a stop in the **Tour** pane come from its `body` and `ask` only. Links in a track `summary` render as links but are not listed under any stop.
+- The links listed under a stop in the **Tour** pane come from its `body` and `ask` only. Links in the tour `summary` and in a track `summary` render as links but are not listed under any stop.
 - A link renders as `#<number> <title>`, for example `#2 Loop bound is off by one`. In Hunk's inline notes it renders as `#2 "Loop bound is off by one" (src/retry.ts:31)`.
 
 ## `tour check`

@@ -41,7 +41,7 @@ function step(tourMove: TourMove) {
 }
 ```
 
-Stops reference each other with `[[id]]` in `body`, `ask`, and track `summary`. `follow` records where the reader came from and `back` returns there; `restart` forgets that history.
+Stops reference each other with `[[id]]` in `body`, `ask`, track `summary`, and the tour `summary`. `follow` records where the reader came from and `back` returns there; `restart` forgets that history.
 
 A browser renderer that already has the diff text can call `parseDiffRanges(patch)` instead of `readDiffRanges`.
 
