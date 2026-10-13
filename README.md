@@ -159,7 +159,7 @@ Development needs [Bun](https://bun.sh).
 
 ```bash
 bun install                # install type packages and test dependencies
-bun run check              # tsc --noEmit, then bun test
+bun run check              # tsc --noEmit, then bun test core extension
 bun run demo               # open the demo tour
 scripts/test-install.sh    # test install.sh against a throwaway HOME
 ```

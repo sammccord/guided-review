@@ -12,7 +12,7 @@
   "scripts": {
     "test": "bun test core extension",
     "typecheck": "tsc --noEmit",
-    "check": "bun run typecheck && bun test",
+    "check": "bun run typecheck && bun run test",
     "demo": "examples/demo/run.sh"
   },
   "devDependencies": {
