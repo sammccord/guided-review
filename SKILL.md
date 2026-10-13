@@ -113,7 +113,7 @@ Write the tour to `tourPath` from step 1. It sits beside the worktree, not insid
 From the worktree:
 
 ```bash
-hunk --extension <skill>/extension tour check <tour.json>
+hunk --extension <skill> tour check <tour.json>
 ```
 
 It validates the schema and confirms every anchor falls inside a hunk of `base...head`. Fix every reported stop and rerun until it prints `ok`. Then clear every warning: split oversized stops and rewrite paragraphs as bullets.

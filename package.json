@@ -1,0 +1,26 @@
+{
+  "name": "guided-review",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Guided code-review tours for the Hunk diff viewer",
+  "license": "MIT",
+  "hunk": {
+    "extensions": ["./extension/index.tsx"],
+    "apiVersion": 25
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "check": "bun run typecheck && bun test"
+  },
+  "devDependencies": {
+    "@opentui/core": "^0.5.6",
+    "@opentui/react": "^0.5.6",
+    "@types/bun": "1.4.1",
+    "@types/react": "^19.2.14",
+    "hunkdiff": "^0.23.0",
+    "react": "^19.2.4",
+    "typescript": "^5.9.3"
+  }
+}

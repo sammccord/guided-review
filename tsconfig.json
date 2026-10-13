@@ -11,15 +11,7 @@
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
     "noEmit": true,
-    "typeRoots": ["../hunk/node_modules/@types"],
     "types": ["bun", "react"],
-    "baseUrl": ".",
-    "paths": {
-      "hunkdiff/extension": ["../hunk/packages/hunk/src/extension-api/index.ts"],
-      "react": ["../hunk/node_modules/@types/react"],
-      "react/*": ["../hunk/node_modules/@types/react/*"],
-      "*": ["../hunk/node_modules/*", "../hunk/node_modules/@types/*"]
-    },
     "strict": true,
     "skipLibCheck": true,
     "noFallthroughCasesInSwitch": true,

@@ -36,7 +36,7 @@ shquote() {
 DIR="$(abspath "${positional[0]}")"
 TOUR="$(abspath "${positional[1]}")"
 LABEL="review $(basename "$DIR")"
-EXT="$(abspath "$(dirname "$0")/../extension")"
+EXT="$(abspath "$(dirname "$0")/..")"
 
 (cd "$DIR" && hunk --extension "$EXT" tour check "$TOUR")
 
