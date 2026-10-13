@@ -41,6 +41,7 @@ When `reviews` has more than one entry, run steps 2 to 7 once per review and wri
 - If your host can run parallel subagents, give each layer its own reviewer with its review entry and the stack, then check that their findings land in the right layer.
 - The stop budget applies to each layer separately. Size it to the layer: a two-file layer may need only a few stops.
 - Merged layers get no tour. They appear in the stack list for context.
+- `needsRebase: true` means the layer below has commits this layer was not built on. The diff still shows only this layer's work, but nothing proves it still applies or builds on the current lower layer. Say so in that layer's `scope.unchecked`, and add a `risk` stop when the lower layer's new commits touch code this layer uses.
 
 ## 2. State the intent
 

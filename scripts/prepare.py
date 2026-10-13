@@ -184,6 +184,11 @@ def prepare_stack(repo, remote, pr, stack_info):
         review_pr(repo, remote, layer_pr, {"number": stack_info["number"], "current": layer_pr["number"], "layers": layers})
         for layer_pr in open_prs
     ]
+    for below, review in zip(reviews, reviews[1:]):
+        contained = git(repo, "merge-base", "--is-ancestor", below["head"], review["head"], check=False).returncode == 0
+        review["needsRebase"] = not contained
+    if reviews:
+        reviews[0]["needsRebase"] = False
     stack = {"number": stack_info["number"], "trunk": stack_info.get("base", {}).get("ref"), "layers": layers}
     return stack, reviews
 
