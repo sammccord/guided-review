@@ -289,8 +289,9 @@ done
 if [ "$uninstall" -eq 0 ] && [ "$dry_run" -eq 0 ] && [ "$refused" -eq 0 ]; then
   cat <<EOF
 
-Next: ask your agent "guided review of <PR URL>",
-or run 'bun run demo' / 'examples/demo/run.sh' to see a demo.
+Next: ask your agent "guided review of <PR URL>".
+To see a demo tour, run $ROOT/examples/demo/run.sh
+(no bun needed), or 'bun run demo' from $ROOT.
 EOF
 fi
 
