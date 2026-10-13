@@ -56,9 +56,10 @@ HEAD="$(git -C "$REPO" rev-parse HEAD)"
 
 sed -e "s/__BASE__/$BASE/" -e "s/__HEAD__/$HEAD/" "$DEMO/tour.template.json" >"$TOUR"
 
-check="$(cd "$REPO" && hunk --extension "$ROOT" tour check "$TOUR" 2>&1)"
-echo "$check"
+# open-tour.sh runs the check again and prints its ok line, so print this one only on failure.
+check="$(cd "$REPO" && hunk --extension "$ROOT" tour check "$TOUR" 2>&1)" || true
 if [[ "$check" != ok:* || "$check" == *$'\n'* ]]; then
+  echo "$check" >&2
   echo "demo tour check reported errors or warnings" >&2
   exit 1
 fi
