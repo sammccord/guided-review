@@ -573,7 +573,7 @@ function TourPane({ files, theme, actions }: ExtensionPaneProps): ReactNode {
         {tour.skipped.length > 0 ? (
           <>
             <Heading label="Skipped files" theme={theme} />
-            <Bullets items={tour.skipped.map((file) => `${file.path} — ${file.reason}`)} theme={theme} empty="" />
+            <Bullets items={tour.skipped.map((file) => `${file.path}: ${file.reason}`)} theme={theme} empty="" />
           </>
         ) : null}
       </box>
