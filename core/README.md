@@ -4,15 +4,19 @@ Renderer-agnostic logic for guided review tours. An agent writes a tour JSON fil
 
 ## Modules
 
+`core/src` holds these modules. `index.ts` re-exports every module except `git.ts`.
+
 | Module | Exports |
 | --- | --- |
-| `schema.ts` | `Tour`, `Track`, `Stop`, `SkippedFile`, `TourStop`, `STOP_KINDS`, `VERDICTS`, `TOUR_VERSION`, `parseTour` (also rejects bad or duplicate stop ids and unresolved `[[id]]` references) |
-| `stops.ts` | `tourStops` (flattens tracks into numbered stops), `checkStopSize`, `MAX_STOP_LINES` |
-| `anchors.ts` | `parseDiffRanges` (pure `git diff` parsing), `checkAnchors`, `HunkRange`, `DiffRanges` |
-| `links.ts` | `indexStops` (`byId`, `linksFrom`, `linksTo`), `segmentText`, `formatLink`, `TextSegment`, `StopIndex` |
-| `validate.ts` | `validateTour`: parse, load diff ranges, then anchor errors, then stop-size warnings |
-| `navigator.ts` | `initialCursor`, `move`: a pure reducer over `next`, `prev`, `nextTrack`, `prevTrack`, `goto`, `restart`, `follow`, `back` |
-| `git.ts` | `readDiffRanges`: runs `git diff base...head`. Node only, so it is exported as `@guided-review/core/git`, not from the index. |
+| `schema.ts` | `Tour`, `Track`, `Stop`, `TourStop`, `SkippedFile`, `StackLayer`, `TourStack`, `StopKind`, `Verdict`, `StackLayerState`, `ParseResult`, `STOP_KINDS`, `VERDICTS`, `STACK_LAYER_STATES`, `TOUR_VERSION`, `parseTour`. `parseTour` also rejects bad or duplicate stop ids and unresolved `[[id]]` references. |
+| `stops.ts` | `tourStops`, which flattens tracks into numbered stops, plus `checkStopSize`, `checkBullets`, and `MAX_STOP_LINES` |
+| `anchors.ts` | `parseDiffRanges`, which parses `git diff` output with no I/O, plus `checkAnchors`, `HunkRange`, and `DiffRanges` |
+| `links.ts` | `indexStops` (`byId`, `linksFrom`, `linksTo`), `segmentText`, `formatLink`, `referencedIds`, `STOP_ID_PATTERN`, `TextSegment`, `StopIndex` |
+| `stack.ts` | `stackPosition`, which gives the current layer's 1-based position, the layer count, and the layers below and above it, plus `StackPosition` |
+| `validate.ts` | `validateTour`, which parses, loads the diff ranges, and checks anchors, then returns `checkStopSize` and `checkBullets` warnings, plus `ValidateResult` |
+| `navigator.ts` | `initialCursor` and `move`, a pure reducer over `next`, `prev`, `nextTrack`, `prevTrack`, `goto`, `restart`, `follow`, and `back`, plus `TourCursor`, `TourMove`, and `MoveResult` |
+| `git.ts` | `readDiffRanges`, which runs `git diff base...head`. It needs Node, so `@guided-review/core/git` exports it and the index does not. |
+| `index.ts` | Everything above except `git.ts` |
 
 ## Using it from a renderer
 
