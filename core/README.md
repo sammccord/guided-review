@@ -1,10 +1,10 @@
 # @guided-review/core
 
-Renderer-agnostic logic for guided review tours. An agent writes a tour JSON file; this library validates it against the reviewed diff and steps a reader through its stops. It has no UI dependencies, so a hunk extension, a web page, or an editor plugin can share it.
+Renderer-independent logic for guided-review tours. An agent writes a tour file. This library validates the tour against the reviewed diff and steps a reader through its stops. It has no UI dependencies, so a Hunk extension, a web page, or an editor plugin can share it.
 
 ## Modules
 
-`core/src` holds these modules. `index.ts` re-exports every module except `git.ts`.
+`src/` holds these modules. `index.ts` re-exports every module except `git.ts`.
 
 | Module | Exports |
 | --- | --- |
@@ -45,11 +45,11 @@ function step(tourMove: TourMove) {
 }
 ```
 
-Stops reference each other with `[[id]]` in `body`, `ask`, track `summary`, and the tour `summary`. `follow` records where the reader came from and `back` returns there; `restart` forgets that history.
+Stops reference each other with `[[id]]` in `body`, `ask`, track `summary`, and the tour `summary`. `follow` records where the reader came from, and `back` returns there. `restart` forgets that history.
 
 A browser renderer that already has the diff text can call `parseDiffRanges(patch)` instead of `readDiffRanges`.
 
-The renderer owns everything else: how a stop is revealed, how messages are shown, and any host-specific export such as hunk's agent-context sidecar (`extension/sidecar.ts`).
+The renderer owns everything else: how a stop is revealed, how messages are shown, and any host-specific export, such as Hunk's agent-context sidecar in [`extension/sidecar.ts`](../extension/sidecar.ts).
 
 ## Tests
 

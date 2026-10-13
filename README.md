@@ -1,8 +1,10 @@
 # guided-review
 
-guided-review is an agent skill and Hunk extension that turns a pull request into an ordered review tour in the Hunk terminal diff viewer. It is for reviewers who get more agent-written pull requests than they can read line by line. You give your coding agent a PR link, a PR number, or a branch. The agent audits the whole change, then opens [Hunk](https://github.com/modem-dev/hunk) on a tour of the few places that need your judgment, each one small, grouped into tracks, linked to related stops, and ending in a concrete question.
+guided-review turns a pull request into an ordered review tour in [Hunk](https://github.com/modem-dev/hunk), a terminal diff viewer. It is an agent skill plus a Hunk extension, for reviewers who get more agent-written pull requests than they can read line by line.
 
-A stacked PR, as managed by the `gh stack` extension, gets one tour per layer. The tour logic lives in a TypeScript library, `core/`, that has no UI code, so other renderers can reuse it.
+You give your coding agent a PR link, a PR number, or a branch. The agent audits the whole change and picks the few places that need your judgment. Then it opens Hunk on a tour of those places. Each stop covers a few lines and ends in a concrete question. Tracks group related stops, and links connect stops across tracks.
+
+A stacked PR, as managed by the `gh stack` extension, gets one tour per stack layer. The tour logic lives in `core/`, a TypeScript library with no UI code, so other renderers can reuse it.
 
 ## What a tour looks like
 
@@ -59,7 +61,7 @@ The demo tour opens Hunk with the file sidebar on the left, the diff in the midd
      test/retry.test.ts:18
 ```
 
-The same stops also appear in the diff as inline notes:
+The same stops also appear in the diff as inline tour notes:
 
 ```text
 ╭─ guided-review note - src/retry.ts R3–R11 ───────────────────────┬┤
@@ -98,10 +100,16 @@ The same stops also appear in the diff as inline notes:
 	scripts/install.sh
 	```
 
-3. Open the demo tour. It needs no pull request, `gh`, or agent:
+3. Open the demo tour. The demo needs no pull request, `gh`, or agent:
 
 	```bash
 	examples/demo/run.sh
+	```
+
+	The script opens Hunk in a new terminal tab or window, because Hunk needs a real terminal. Inside [herdr](https://herdr.dev), a terminal workspace manager, it opens a herdr tab. Inside tmux it opens a tmux window. Otherwise, on macOS, it opens an iTerm2 or Terminal.app window. With none of those, it prints the command. To print the command and run it yourself instead, use `--print --keep`:
+
+	```bash
+	examples/demo/run.sh --print --keep
 	```
 
 	With `bun` installed, `bun run demo` runs the same script.
@@ -113,6 +121,18 @@ The same stops also appear in the diff as inline notes:
 	```
 
 	The agent works in a clone of the repository under review. Start it from inside that clone, or it looks for one or runs `gh repo clone`. Add a stop budget to change the depth, such as `quick`, `deep`, or `12 stops`.
+
+## Open a tour you wrote
+
+Run `hunk tour check` and `hunk tour open` from inside the repository the tour reviews, because both run `git diff` in the current directory. To check and open a tour file you wrote or kept from an earlier review:
+
+```bash
+cd /path/to/reviewed-repo
+hunk --extension /path/to/guided-review tour check tour.json
+hunk --extension /path/to/guided-review tour open tour.json
+```
+
+`tour check` prints an `ok:` line when the tour is valid. `tour open` starts Hunk in the current terminal. [Tour file format](docs/tour-format.md) lists every field and every rule.
 
 ## Key bindings
 
@@ -128,7 +148,7 @@ These keys work while a tour is open in Hunk:
 | `B` | Back to the stop you left by following a link | guided-review |
 | none | **Restart tour**, from the **Extensions** menu | guided-review |
 | `{` `}` | Previous or next annotated hunk | Hunk |
-| `a` | Show or hide the inline notes | Hunk |
+| `a` | Show or hide the inline tour notes | Hunk |
 | `c` | Add your own review note | Hunk |
 | `s` | Hide or show the file sidebar, which makes room for the **Tour** pane in a narrow terminal | Hunk |
 | `q` | Quit | Hunk |
@@ -148,7 +168,7 @@ Clicking a stop in the **Tour** pane jumps to it. Clicking a link row follows th
 ## Documentation
 
 - [Install guided-review](docs/install.md) covers each agent, manual installs, use without an agent, upgrades, removal, and troubleshooting.
-- [Tour file format](docs/tour-format.md) lists every field of `tour.json` and every rule `hunk tour check` enforces.
+- [Tour file format](docs/tour-format.md) lists every field of a tour file and every rule `hunk tour check` enforces.
 - [How guided-review works](docs/how-it-works.md) explains the pipeline, the design choices, and the known limits.
 - [Changelog](CHANGELOG.md).
 - [`core/README.md`](core/README.md) describes the library's modules.

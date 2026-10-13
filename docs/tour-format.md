@@ -1,6 +1,6 @@
 # Tour file format
 
-A tour is one JSON file. The agent writes it to the `tourPath` that `scripts/prepare.py` prints, beside the review worktree. `hunk tour check` validates it and `hunk tour open` presents it.
+A tour file is one JSON file. The agent writes it to the `tourPath` that `scripts/prepare.py` prints, beside the review worktree. `hunk tour check` validates it and `hunk tour open` presents it.
 
 The TypeScript types in [`core/src/schema.ts`](../core/src/schema.ts) are the source of truth, and `parseTour` in the same file enforces them. This page follows the order of that file. Version 1 is the only version.
 
@@ -8,7 +8,7 @@ The TypeScript types in [`core/src/schema.ts`](../core/src/schema.ts) are the so
 
 - "Non-empty string" means a JSON string with at least one character that is not whitespace.
 - "Positive integer" means a JSON number that is a whole number greater than 0.
-- `parseTour` ignores fields it does not know, except the top-level `stops` field, which is an error.
+- `parseTour` ignores fields it does not know, except a top-level `stops` key. Any top-level `stops` key is an error, whatever its value.
 - `parseTour` collects every error in one pass. It does not stop at the first.
 
 ## `Stop`
@@ -107,7 +107,7 @@ The top-level object.
 | `skipped` | `SkippedFile[]` | yes | Array. May be empty. |
 | `stack` | `TourStack` | no | Present when the reviewed PR is one layer of a stack. |
 
-A top-level `stops` array is an error: `stops is no longer supported; group stops under tracks[]`.
+A top-level `stops` key with any value, `null` included, produces the error `stops is no longer supported; group stops under tracks[]`.
 
 ## Links
 
@@ -116,7 +116,7 @@ A link is `[[id]]`, where `id` is a stop's `id`. The text between the brackets c
 - `parseTour` checks links in the tour `summary` and in every track `summary`, stop `body`, and stop `ask`. A link to an unknown id is an error. When a known id is close in spelling, the message suggests it, as in `references unknown stop [[atempt-loop]] (did you mean [[attempt-loop]]?)`.
 - A stop that links to its own `id` is an error.
 - The links listed under a stop in the **Tour** pane come from its `body` and `ask` only. Links in the tour `summary` and in a track `summary` render as links but are not listed under any stop.
-- A link renders as `#<number> <title>`, for example `#2 Loop bound is off by one`. In Hunk's inline notes it renders as `#2 "Loop bound is off by one" (src/retry.ts:31)`.
+- A link renders as `#<number> <title>`, for example `#2 Loop bound is off by one`. In Hunk's inline tour notes it renders as `#2 "Loop bound is off by one" (src/retry.ts:31)`.
 
 ## `tour check`
 
@@ -128,7 +128,7 @@ hunk --extension <guided-review> tour check <tour.json>
 
 | Exit status | Meaning |
 | --- | --- |
-| `0` | No errors. Prints warnings, if any, to stderr, then `ok: <stops> stops in <tracks> tracks across <files> files, verdict <verdict>` to stdout. A tour with a `stack` adds ` · stack #<number> layer <position>/<layers>`. |
+| `0` | No errors. Prints warnings, if any, to stderr, each prefixed with `warning: `. Then prints `ok: <stops> stops in <tracks> tracks across <files> files, verdict <verdict>` to stdout. A tour with a `stack` adds ` · stack #<number> layer <position>/<layers>`. |
 | `1` | The file cannot be read, is not JSON, fails `parseTour`, the `git diff` fails, or an anchor fails. Prints one error per line to stderr. |
 | `2` | Usage error. Prints `usage: hunk tour check\|open <tour.json>`. |
 
@@ -138,21 +138,19 @@ hunk --extension <guided-review> tour check <tour.json>
 
 Errors from `parseTour` cover every rule in the tables above, plus duplicate stop ids, duplicate layer numbers, unknown or self links, and a `stack.current` that names no layer or a merged layer.
 
-Anchor errors come from `checkAnchors` in `core/src/anchors.ts`. Each hunk of the diff is a line range on the old side and a line range on the new side, read from its `@@ -a,b +c,d @@` header. The range includes the context lines git prints around the change. A stop passes when one range on its `side` contains every line from `line` to `endLine`. Otherwise the stop gets one of these errors:
+Anchor errors come from `checkAnchors` in `core/src/anchors.ts`. Each hunk of the diff is a line range on the old side and a line range on the new side, read from its `@@ -a,b +c,d @@` header. The range includes the context lines git prints around the change. A stop passes when one range on its `side` contains every line from `line` to `endLine`, where `endLine` defaults to `line`. Otherwise the stop gets one error, prefixed with `stop <n> "<title>": `. In these messages, `<lines>` is `line <line>` for a single line or `lines <line>-<endLine>` for a range, and `<hunks>` lists the file's hunk ranges on that side, as in `3-11, 28-40`.
 
-- `path <path> is not in the diff`, with a `(did you mean <path>?)` suggestion when another changed file has the same file name.
+- `path <path> is not in the diff`, with a ` (did you mean <path>?)` suggestion when another changed file has the same file name.
 - `<lines> (<side>): file has no hunks on the <side> side`, for example `side: "old"` on a new file.
-- `<lines> (<side>) runs past hunk <start>-<end>; an anchor must stay inside one hunk`, when the anchor starts inside a hunk and ends outside it.
-- `<lines> (<side>) is outside every hunk`.
-
-The last three list the file's hunks on that side.
+- `<lines> (<side>) runs past hunk <start>-<end>; an anchor must stay inside one hunk (hunks: <hunks>)`, when the anchor starts inside a hunk and ends outside it.
+- `<lines> (<side>) is outside every hunk (hunks: <hunks>)`.
 
 ### Warnings
 
 Warnings come from `checkStopSize` and `checkBullets` in `core/src/stops.ts`. They never change the exit status.
 
-- A stop whose anchor spans more than `MAX_STOP_LINES` lines, which is 20. The span is `endLine - line + 1`. Message: `stop <n> "<title>": spans <span> lines; split it into smaller stops (max 20)`.
-- A tour `summary`, track `summary`, or stop `body` with a non-blank line that does not start with `- ` after its leading spaces. Message: `<where>: write it as "- " bullet lines`. The `ask` field is not checked.
+- A stop whose anchor spans more than `MAX_STOP_LINES` lines, which is 20. The span is `endLine - line + 1`, where `endLine` defaults to `line`. Message: `stop <n> "<title>": spans <span> lines; split it into smaller stops (max 20)`.
+- A tour `summary`, track `summary`, or stop `body` with a non-blank line that does not start with `- ` after its leading spaces. Message: `<where>: write it as "- " bullet lines`, where `<where>` is `summary`, `track <n> "<title>" summary`, or `stop <n> "<title>" body`. `checkBullets` does not check the `ask` field.
 
 ## Example
 

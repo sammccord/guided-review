@@ -42,7 +42,7 @@ The script symlinks the repository into each agent's user-level skill directory:
 	scripts/install.sh --agent claude --agent codex
 	```
 
-- To copy the repository instead of linking it, add `--copy`. The copy leaves out `.git`, `node_modules`, and `__pycache__`. Use a copy when the agent cannot follow symlinks or when you want the install frozen at one version.
+- If the agent cannot follow symlinks, or you want the install to stay at one version, add `--copy`. The script then copies the repository instead of linking it, and leaves out `.git`, `node_modules`, and `__pycache__`.
 
 	```bash
 	scripts/install.sh --copy --agent codex
@@ -54,7 +54,7 @@ The script never overwrites a path it did not create. If the install path holds 
 
 ### Keep the folder name `guided-review`
 
-Agent hosts find a skill by its directory name and expect that name to match the `name: guided-review` line in `SKILL.md`. `scripts/install.sh` always names the install `guided-review`, whatever the clone is called. Hunk names an extension installed with `hunk extension install` after its folder, so the clone's folder name matters there too.
+Agent hosts find a skill by its directory name and expect that name to match the `name: guided-review` line in [`SKILL.md`](../SKILL.md). `scripts/install.sh` always names the install `guided-review`, whatever the clone is called. Hunk names an extension installed with `hunk extension install` after its folder, so the clone's folder name matters there too.
 
 ## Install the skill by hand
 
@@ -78,7 +78,7 @@ Use the install paths in the table above for other agents.
 
 The extension adds the `hunk tour` command, the **Tour** pane, and the tour keys. You can open any tour file with it, for example one an agent wrote earlier or one you wrote by hand.
 
-Run these commands from the repository the tour reviews, because `tour check` and `tour open` run `git diff <base>...<head>` in the current directory.
+Because `tour check` and `tour open` run `git diff <base>...<head>` in the current directory, run these commands from the repository the tour reviews.
 
 - To check a tour without opening it:
 
@@ -177,7 +177,7 @@ Install `gh`. Without it, `prepare.py` can review a branch but not a PR URL or P
 
 ### Hunk does not open
 
-Hunk needs a real terminal. When an agent runs `scripts/open-tour.sh`, the script opens a herdr tab, a tmux window, an iTerm2 window, or a Terminal.app window, in that order of preference. If none is available, it prints `No terminal launcher found; run the command below yourself.` Copy the `Tour command:` line it prints and run it in a terminal.
+Hunk needs a real terminal. When an agent runs `scripts/open-tour.sh`, the script opens a new terminal tab or window for Hunk. Inside [herdr](https://herdr.dev), a terminal workspace manager, it opens a herdr tab. Inside tmux it opens a tmux window. Otherwise, on macOS, it opens an iTerm2 or Terminal.app window. If none of those applies, it prints `No terminal launcher found; run the command below yourself.` Copy the `Tour command:` line it prints and run it in a terminal.
 
 ### The **Tour** pane is missing
 
@@ -187,4 +187,4 @@ Hunk drops the pane when the terminal is too narrow for the sidebar, the diff, a
 
 Errors stop `tour check` with status 1, and `tour open` refuses to open the tour. Warnings start with `warning:` and never block. The usual errors are an anchor outside every hunk, an anchor that runs past the end of its hunk, a path that is not in the diff, and an unknown `[[id]]` link. The usual warnings are a stop longer than 20 lines and prose that is not `- ` bullet lines. [Tour file format](tour-format.md) lists every rule.
 
-Run `tour check` from the repository the tour reviews. In another directory, `tour check` prints `git diff <base>...<head> failed in <directory>` followed by git's own message.
+If you run `tour check` in a directory where `base` and `head` do not resolve, it prints `git diff <base>...<head> failed in <directory>: ` followed by git's own message. Run `tour check` from the repository the tour reviews.
