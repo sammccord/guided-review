@@ -27,7 +27,7 @@ Run from inside a clone of the repository under review. If the user is elsewhere
 It checks whether the PR is a layer of a GitHub stack (the stacked-PR chain the `gh stack` extension manages), fetches every open layer, and prints JSON:
 
 - `stack` is the whole stack, bottom layer first, or `null`. `stackLookup` says `found`, `none`, `not-a-pr`, or why the lookup was `unavailable`.
-- `reviews` has one entry per open layer, bottom first, or a single entry when there is no stack. Each entry has its own `worktree`, `tourPath`, `base`, `head`, `title`, `url`, `description`, `stat`, `commits`, and `stack`.
+- `reviews` has one entry per open layer, bottom first, or a single entry when there is no stack. Each entry has its own `worktree`, `tourPath`, `base`, `head`, `title`, `url`, `description`, `stat`, `commits`, `stack`, and `cleanup`.
 
 Each review gets branch `review/<slug>` in a worktree under `.git/guided-review/`. The user's checkout is untouched. Read code from the review's worktree, not the user's checkout. Every diff in this skill is `git diff <base>...<head>` for one review. In a stack, a layer's `base` is the lower-layer commit it was built on, so each diff holds only that layer's work. With `needsRebase` that commit is older than the lower layer's current head.
 
@@ -134,4 +134,4 @@ In hunk, the Tour pane on the right lists the tracks, each with its summary and 
 
 For a stack, start with the stack number and one line per layer (PR, verdict, stop count), then give the full report below for each layer, bottom first.
 
-Reply with the verdict and the intent statement. List the tracks, each with a one-line summary and its stops, one line each as number, `kind`, title, and `path:line`. If you used fewer stops than the budget, say why. Include the unchecked scope, the `Tour command:` line (`open-tour.sh --print` gives it without opening a terminal), and cleanup with `git worktree remove <worktree> && git branch -D <branch>` for each review.
+Reply with the verdict and the intent statement. List the tracks, each with a one-line summary and its stops, one line each as number, `kind`, title, and `path:line`. If you used fewer stops than the budget, say why. Include the unchecked scope, the `Tour command:` line (`open-tour.sh --print` gives it without opening a terminal), and each review's `cleanup` command from step 1, copied as is. It removes the worktree, the review branch, and any fetched PR ref.

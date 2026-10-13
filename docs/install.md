@@ -149,10 +149,10 @@ The skill always passes `--extension <skill directory>`, so an agent install doe
 	hunk extension remove guided-review
 	```
 
-3. Remove review worktrees the agent left behind. Each review's report gives the command, for example:
+3. Remove review worktrees the agent left behind. Each review's report gives the command, which removes the worktree, its `review/<slug>` branch, and the fetched PR ref. For example:
 
 	```bash
-	git worktree remove .git/guided-review/pr-123 && git branch -D review/pr-123
+	git -C ~/src/api worktree remove --force ~/src/api/.git/guided-review/pr-123 && git -C ~/src/api branch -D review/pr-123 && git -C ~/src/api update-ref -d refs/guided-review/pr-123
 	```
 
 ## Troubleshoot

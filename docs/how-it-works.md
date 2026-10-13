@@ -6,7 +6,7 @@ Coding agents write pull requests faster than people can read them. Reading ever
 
 A review passes through five steps. The agent runs the first four. Hunk runs the last.
 
-1. **Prepare.** `scripts/prepare.py <pr-url | pr-number | branch> [base-ref]` runs inside a clone of the repository under review. For a PR it calls `gh pr view`, asks the host whether the PR is part of a stack, and fetches each open PR's head into `refs/guided-review/pr-<n>`. For each review it creates a branch `review/<slug>` checked out in a worktree at `.git/guided-review/<slug>`, where the slug is `pr-<n>` or `branch-<name>`. It prints JSON with one entry per review: the worktree, the `tourPath` beside it, the `base` and `head` SHAs, and the title, description, diff stat, and commits.
+1. **Prepare.** `scripts/prepare.py <pr-url | pr-number | branch> [base-ref]` runs inside a clone of the repository under review. For a PR it calls `gh pr view`, asks the host whether the PR is part of a stack, and fetches each open PR's head into `refs/guided-review/pr-<n>`. For each review it creates a branch `review/<slug>` checked out in a worktree at `.git/guided-review/<slug>`, where the slug is `pr-<n>` or `branch-<name>`. It prints JSON with one entry per review: the worktree, the `tourPath` beside it, the `base` and `head` SHAs, the title, description, diff stat, and commits, and a `cleanup` command.
 2. **Audit.** The agent follows `SKILL.md`. It states the change's intent, sorts every changed file into Core, Contract, Tests, or Mechanical, and reads every Core and Contract hunk with its callers and callees through the lenses in `references/lenses.md`. It runs tests and type checks where it can, because a fact it ran is worth more than a fact it inferred.
 3. **Write the tour.** The agent picks the stops, groups them into tracks, links related stops, and writes `tour.json` in the format described in [Tour file format](tour-format.md).
 4. **Check.** `hunk --extension <skill> tour check <tour.json>` confirms that the file parses, that every link resolves, and that every anchor falls inside one hunk of `git diff <base>...<head>`. The agent fixes errors and warnings until the check prints `ok` and nothing else.
@@ -50,7 +50,7 @@ The format also pushes prose into `- ` bullet lines and warns on paragraphs. Tha
 
 The worktree is also where the agent reads code. Reading from your checkout would mean reading whatever branch you happen to have open, which is the wrong code for the review.
 
-The cost is disk space and cleanup. The report for each review ends with `git worktree remove <worktree> && git branch -D <branch>`. Those commands leave the fetched `refs/guided-review/pr-<n>` refs in place. Rerunning `prepare.py` for the same PR reuses the worktree and resets its branch to the new head.
+The cost is disk space and cleanup. Each review entry carries a `cleanup` command that removes the worktree, the `review/<slug>` branch, and, for a PR, the fetched `refs/guided-review/pr-<n>` ref. The agent's report ends with that command for each review. Rerunning `prepare.py` for the same PR reuses the worktree and resets its branch to the new head.
 
 ## Stacks get one tour per layer
 

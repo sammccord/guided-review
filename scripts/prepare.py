@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import json
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -94,7 +95,18 @@ def checkout_worktree(repo, slug, head):
     return str(worktree), branch
 
 
-def build_review(repo, slug, base, head, title, url=None, number=None, body=None, stack=None):
+def pr_ref(number):
+    return f"refs/guided-review/pr-{number}"
+
+
+def cleanup_command(repo, worktree, branch, ref):
+    steps = [["worktree", "remove", "--force", worktree], ["branch", "-D", branch]]
+    if ref:
+        steps.append(["update-ref", "-d", ref])
+    return " && ".join(shlex.join(["git", "-C", repo, *step]) for step in steps)
+
+
+def build_review(repo, slug, base, head, title, url=None, number=None, body=None, stack=None, ref=None):
     merge_base = git(repo, "merge-base", base, head, check=False).stdout.strip()
     if not merge_base:
         raise PrepareError(f"no merge base between {base} and {head}")
@@ -113,11 +125,12 @@ def build_review(repo, slug, base, head, title, url=None, number=None, body=None
         "stat": git(worktree, "diff", "--shortstat", f"{base}...{head}").stdout.strip(),
         "commits": git(worktree, "log", "--format=%h %s", f"{merge_base}..{head}").stdout.splitlines(),
         "stack": stack,
+        "cleanup": cleanup_command(repo, worktree, branch, ref),
     }
 
 
 def fetch_prs(repo, remote, prs):
-    refspecs = [f"+refs/pull/{pr['number']}/head:refs/guided-review/pr-{pr['number']}" for pr in prs]
+    refspecs = [f"+refs/pull/{pr['number']}/head:{pr_ref(pr['number'])}" for pr in prs]
     refspecs += sorted({pr["baseRefName"] for pr in prs})
     proc = git(repo, "fetch", "--quiet", remote, *refspecs, check=False)
     if proc.returncode != 0:
@@ -133,7 +146,7 @@ def review_pr(repo, remote, pr, stack=None):
             raise PrepareError(f"could not resolve base {pr['baseRefName']} for #{pr['number']}")
     return build_review(
         repo, f"pr-{pr['number']}", base, pr["headRefOid"],
-        pr["title"], pr["url"], pr["number"], pr["body"], stack,
+        pr["title"], pr["url"], pr["number"], pr["body"], stack, pr_ref(pr["number"]),
     )
 
 
