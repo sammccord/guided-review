@@ -185,7 +185,7 @@ function apply(ctx: ExtensionCommandContext, tourMove: TourMove, describe: Descr
     ctx.notify(result.reason);
     return;
   }
-  if (!ctx.panes.isOpen(PANE_ID)) ctx.panes.open(PANE_ID);
+  ctx.panes.open(PANE_ID);
   const { fileId, missing } = locateForCommand(ctx, stops[result.cursor.current]!.stop);
   revealStop(ctx.navigation, ctx.notify, fileId, result.cursor, missing, describe);
 }
@@ -588,10 +588,15 @@ export default function registerGuidedReview(hunk: HunkExtensionAPI) {
     id: PANE_ID,
     title: "Tour",
     placement: "right",
-    width: { preferred: 48, min: 32 },
+    width: { preferred: 48, min: 32, max: 64, fraction: 0.3 },
     defaultOpen: true,
     available: () => state.tour !== null,
     component: TourPane,
+  });
+
+  // Below 160 columns Hunk hides every side pane, even logically open ones, until `panes.open` reveals the area.
+  hunk.on("changeset_loaded", (_payload, ctx) => {
+    if (state.tour) ctx.panes.open(PANE_ID);
   });
 
   hunk.registerCommand({ id: "next", title: "Next tour stop", key: ">" }, (ctx) => apply(ctx, { kind: "next" }));

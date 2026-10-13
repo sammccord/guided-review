@@ -130,6 +130,7 @@ These keys work while a tour is open in Hunk:
 | `{` `}` | Previous or next annotated hunk | Hunk |
 | `a` | Show or hide the inline notes | Hunk |
 | `c` | Add your own review note | Hunk |
+| `s` | Hide or show the file sidebar, which makes room for the **Tour** pane in a narrow terminal | Hunk |
 | `q` | Quit | Hunk |
 
 Clicking a stop in the **Tour** pane jumps to it. Clicking a link row follows the link.

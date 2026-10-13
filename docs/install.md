@@ -181,7 +181,7 @@ Hunk needs a real terminal. When an agent runs `scripts/open-tour.sh`, the scrip
 
 ### The **Tour** pane is missing
 
-Hunk hides the pane when the terminal is too narrow for the sidebar, the diff, and the pane. Widen the terminal, or press `s` to hide the file sidebar. In testing, the demo showed the pane at 160 columns, and at 140 columns only with the sidebar hidden.
+Hunk drops the pane when the terminal is too narrow for the sidebar, the diff, and the pane. In testing, the demo showed all three at 120 columns and wider. In a narrower terminal, press `s` to hide the file sidebar, or widen the terminal.
 
 ### `tour check` prints errors or warnings
 
