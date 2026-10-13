@@ -1,0 +1,105 @@
+{
+  "version": 1,
+  "title": "Demo: retry jitter, shouldRetry, injectable clock",
+  "base": "__BASE__",
+  "head": "__HEAD__",
+  "verdict": "request-changes",
+  "summary": "- Intent: add jitter and a shouldRetry predicate; make the bucket clock injectable.\n- Blocker: retry makes one attempt more than maxAttempts.\n- The test was bumped to match the bug instead of catching it.\n- Bucket refill can starve fast pollers; depends on caller rates.",
+  "scope": {
+    "checked": [
+      "ran `bun test`: 3 pass, including the 5-call expectation",
+      "fake-clock repro: bucket(1, 5/s) polled every 100ms acquires 0 tokens in 2s",
+      "sleep.ts to delay.ts: pure rename, one identifier changed"
+    ],
+    "unchecked": [
+      "callers of TokenBucket and their polling rates; none in this repo",
+      "jitter behavior under real load"
+    ]
+  },
+  "tracks": [
+    {
+      "title": "Retry attempts and backoff",
+      "summary": "- RetryOptions renames retries to maxAttempts and changes its meaning.\n- The loop kept the old bound; see [[attempt-loop]].\n- The test pins the extra attempt; see [[attempts-test]].\n- Jitter feeds the bucket risk in track 2; see [[full-jitter]].",
+      "stops": [
+        {
+          "id": "retry-options",
+          "path": "src/retry.ts",
+          "side": "new",
+          "line": 3,
+          "endLine": 11,
+          "kind": "context",
+          "title": "maxAttempts now counts the first attempt",
+          "body": "- Old field: retries after the first attempt (default 3).\n- New field: total attempts, first included (default 4).\n- Same total for defaults; the loop must change with it.",
+          "ask": "Is renaming the field enough warning for callers that set retries?"
+        },
+        {
+          "id": "attempt-loop",
+          "path": "src/retry.ts",
+          "side": "new",
+          "line": 31,
+          "endLine": 37,
+          "kind": "blocker",
+          "title": "Loop bound is off by one",
+          "body": "- `attempt <= maxAttempts` runs maxAttempts + 1 times.\n- Bound was right for the old meaning; see [[retry-options]].\n- Default config now makes 5 calls, not 4.\n- Fix: `attempt < maxAttempts`, delay while `attempt < maxAttempts - 1`.",
+          "ask": "Block on this, and is the proposed fix right?"
+        },
+        {
+          "id": "attempts-test",
+          "path": "test/retry.test.ts",
+          "side": "new",
+          "line": 18,
+          "endLine": 25,
+          "kind": "inspect",
+          "title": "Test expectation moved from 4 to 5",
+          "body": "- Test passes maxAttempts: 4 and now expects 5 calls.\n- Pins the bug instead of catching it; see [[attempt-loop]].",
+          "ask": "Should this assert 4 calls once the loop is fixed?"
+        },
+        {
+          "id": "full-jitter",
+          "path": "src/retry.ts",
+          "side": "new",
+          "line": 21,
+          "endLine": 24,
+          "kind": "question",
+          "title": "Full jitter on by default",
+          "body": "- Delay is uniform in [0, capped); can be near zero.\n- On by default, so every existing caller changes timing.\n- Spreads load well but shortens the average wait by half.",
+          "ask": "Should jitter default on, or start at half jitter?"
+        }
+      ]
+    },
+    {
+      "title": "Token bucket clock",
+      "summary": "- The clock is now injectable; defaults keep Date.now.\n- Refills round down and drop the remainder; see [[refill-floor]].\n- Jittered retries make fast polling likelier; see [[full-jitter]].",
+      "stops": [
+        {
+          "id": "injected-clock",
+          "path": "src/rate-limiter.ts",
+          "side": "new",
+          "line": 7,
+          "endLine": 14,
+          "kind": "inspect",
+          "title": "Injectable clock in the constructor",
+          "body": "- New optional third argument `now`, default Date.now.\n- lastRefill now starts from the injected clock.\n- Enables the starvation repro; see [[refill-floor]].",
+          "ask": "Confirm Date.now as a detached default is safe here."
+        },
+        {
+          "id": "refill-floor",
+          "path": "src/rate-limiter.ts",
+          "side": "new",
+          "line": 24,
+          "endLine": 27,
+          "kind": "risk",
+          "title": "Refill floors tokens and resets the timer",
+          "body": "- Math.floor drops fractional tokens, then lastRefill resets.\n- Polling faster than one token interval never refills.\n- Fake clock: 5/s bucket polled every 100ms got 0 tokens.\n- Jittered retries can poll that fast; see [[full-jitter]].",
+          "ask": "Does any caller poll faster than one token interval?"
+        }
+      ]
+    }
+  ],
+  "skipped": [
+    {
+      "path": "src/index.ts",
+      "reason": "Adds delay and Clock re-exports; no logic."
+    }
+  ]
+}
