@@ -138,21 +138,22 @@ The muted hint below **Ask:** lists the current keys for decide, ask, and finish
 The reviewer talks to you from Hunk while the tour is open. Five things become requests. Every note is a question. A reply under one of your answers is a follow-up. `Q` sends a question. `V` sends a decision on a stop: `agree`, `disagree`, or `unsure`, plus an optional comment. **Post to PR** sends a `comment` request for that stop. Run from the worktree, with every open tour of a stack at once:
 
 ```bash
-hunk --extension <skill> tour wait <tour.json>... [--timeout <seconds>]
+hunk --extension <skill> tour wait <tour.json>... [--timeout <seconds>] [--away <minutes>]
 ```
 
-It blocks until something needs you, then prints one JSON line. Its `next` field says what to run. The default timeout is 90 seconds. Keep `--timeout` below your shell tool's limit.
+It blocks until something needs you, then prints one JSON line. Its `next` field says what to run. The default timeout is 90 seconds. Keep `--timeout` below your shell tool's limit. `--away` defaults to 30 minutes without reviewer activity. Navigation, commands, notes, and requests reset the clock, as do your answers. The most recently active open tour sets the clock for a stack.
 
-- `pending`. `items` lists the requests, each with its `tour`, `id`, `kind`, and the `stop` it was made at. The content is `text`, `decision` and `comment`, or `body` for a `comment` request. Answer each one, then run `wait` again.
+- `pending`. `items` lists the requests, each with its `tour`, `id`, `kind`, and the `stop` it was made at. The content is `text`, `decision` and `comment`, or `body` for a `comment` request. Answer each one, then run `wait` again immediately.
   ```bash
   hunk --extension <skill> tour answer <tour.json> <id> --text '<answer>'
   ```
   The answer appears in Hunk as a reply under the reviewer's note, or as a note at the line or stop the request names. The first line becomes the note's summary, so keep it short. For a `decision`, say whether you agree and why. An `agree` with no comment never reaches you.
 - A `comment` request carries the stop's `title`, `ask`, and `anchor` in `stop`, plus its full `body`. Reword it slightly as actionable feedback for the author: what to change and why. Keep the facts and evidence. Turn the reviewer-facing ask into a request or question to the author. Drop `[[id]]` tour links. Keep it short. `tour answer` posts it as a line comment on the PR at the stop, then confirms in Hunk with the GitHub link.
-- `idle`. Nothing arrived before the timeout. Run `wait` again.
+- `idle`. The reviewer is still around or has not started yet. Run `wait` again. Never end your turn on `idle`, however many arrive in a row.
+- `away`. No reviewer activity arrived for `--away` minutes. Stop waiting and tell the user the review looks paused. Tell them saying "resume" restarts the wait loop.
 - `finished` or `closed`. The reviewer pressed `F`, chose **Finish review** in the Extensions menu, or quit Hunk. The payload has `decisions`, the latest decision per stop, `transcript`, every request with its status and your answer, and `approval`, eligibility and blockers for each tour. Go to step 10.
 
-Answer from what you read in step 4, and say when you do not know. `answer` posts once per request. A request that was already answered is reported as `already-answered`, so rerunning after an interruption is safe.
+Keep the wait loop running until `finished`, `closed`, or `away`. Answer from what you read in step 4, and say when you do not know. `answer` posts once per request. A request that was already answered is reported as `already-answered`, so rerunning after an interruption is safe.
 
 ## 10. Report
 

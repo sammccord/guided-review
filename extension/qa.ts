@@ -24,6 +24,7 @@ import {
   postPlan,
   requestLabel,
   reviewEnd,
+  reviewerIdleMs,
   statusText,
   transcript,
   tourStops,
@@ -52,9 +53,11 @@ import {
 
 const EXTENSION_DIR = resolve(import.meta.dir, "..");
 const WAIT_DEFAULT_SECONDS = 90;
+const AWAY_DEFAULT_MINUTES = 30;
 const ANSWERING_SECONDS = 600;
 const POLL_MS = 1000;
 const TUI_POLL_MS = 2000;
+const ACTIVITY_WRITE_MS = 15_000;
 const STATUS_ID = "qa";
 
 export const QA_KEYS = { decide: "V", ask: "Q", finish: "F" } as const;
@@ -68,7 +71,7 @@ export function qaHint(keybindings?: Partial<ExtensionPaneProps["keybindings"]>)
 
 export const QA_USAGE = [
   "usage: hunk tour check|open <tour.json>",
-  "       hunk tour wait <tour.json>... [--timeout <seconds>]",
+  "       hunk tour wait <tour.json>... [--timeout <seconds>] [--away <minutes>]",
   "       hunk tour answer <tour.json> <id> --text <answer>",
   "       hunk tour approve <tour.json> [--body <text>]",
 ];
@@ -103,17 +106,23 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
 interface WaitArgs {
   tours: string[];
   timeoutMs: number;
+  awayMs: number;
 }
 
 function parseWaitArgs(args: readonly string[], cwd: string): WaitArgs | string {
   const tours: string[] = [];
   let timeoutMs = WAIT_DEFAULT_SECONDS * 1000;
+  let awayMs = AWAY_DEFAULT_MINUTES * 60_000;
   for (let i = 0; i < args.length; i++) {
     const arg = args[i]!;
     if (arg === "--timeout") {
       const seconds = Number(args[++i]);
       if (!Number.isFinite(seconds) || seconds <= 0) return "--timeout needs a positive number of seconds";
       timeoutMs = seconds * 1000;
+    } else if (arg === "--away") {
+      const minutes = Number(args[++i]);
+      if (!Number.isFinite(minutes) || minutes <= 0) return "--away needs a positive number of minutes";
+      awayMs = minutes * 60_000;
     } else if (arg.startsWith("--")) {
       return `unknown option ${arg}`;
     } else {
@@ -121,7 +130,7 @@ function parseWaitArgs(args: readonly string[], cwd: string): WaitArgs | string 
     }
   }
   if (tours.length === 0) return "wait needs at least one tour file";
-  return { tours, timeoutMs };
+  return { tours, timeoutMs, awayMs };
 }
 
 interface TourBox {
@@ -205,7 +214,12 @@ export async function runWait(args: readonly string[], ctx: ExtensionCliCommandC
     await sleep(Math.min(POLL_MS, deadline - Date.now()), ctx.signal);
     boxes = await readAll(parsed.tours);
   }
-  await writeLine(ctx.stdout, { kind: "idle", next: "wait again" });
+  const idles = boxes.filter(({ box }) => !reviewEnd(box, pidAlive)).map(({ box }) => reviewerIdleMs(box, Date.now()) ?? 0);
+  const idle = idles.length === 0 ? 0 : Math.min(...idles);
+  const idleMinutes = Math.floor(idle / 60_000);
+  await writeLine(ctx.stdout, idle >= parsed.awayMs
+    ? { kind: "away", idleMinutes, next: "stop waiting; tell the reviewer the agent paused and to say when to resume" }
+    : { kind: "idle", idleMinutes, next: "wait again; do not end your turn" });
   return { kind: "exit", code: 0 };
 }
 
@@ -458,12 +472,24 @@ export async function openSession(input: { repo: string; tourPath: string; head:
   setState({ paths, session, box: await readMailbox(paths) });
 }
 
+let sessionWrite: Promise<void> = Promise.resolve();
+
 async function writeSession(patch: Partial<SessionRecord>): Promise<void> {
   if (!state.paths || !state.session) return;
   if (!ownsSession(readSessionSync(state.paths.session), state.session)) return;
   const session = { ...state.session, ...patch };
+  const path = state.paths.session;
   setState({ ...state, session });
-  await writeJsonAtomic(state.paths.session, session);
+  const write = sessionWrite.then(() => writeJsonAtomic(path, session));
+  sessionWrite = write.catch(() => {});
+  await write;
+}
+
+function touchActivity(): void {
+  if (!state.session) return;
+  if (Date.now() - Date.parse(state.session.activeAt ?? state.session.openedAt) > ACTIVITY_WRITE_MS) {
+    void writeSession({ activeAt: now() });
+  }
 }
 
 function stopRef(entry: TourStop): StopRef {
@@ -526,6 +552,7 @@ function selectedAnchor(ctx: ExtensionCommandContext): Anchor | null {
 const NO_TOUR = "No tour loaded. Start one with `hunk tour open <tour.json>`.";
 
 async function ask(ctx: ExtensionCommandContext, access: TourAccess) {
+  touchActivity();
   const { paths } = state;
   if (!paths) {
     ctx.notify(NO_TOUR, "warning");
@@ -544,6 +571,7 @@ async function ask(ctx: ExtensionCommandContext, access: TourAccess) {
 }
 
 async function decide(ctx: Pick<ExtensionCommandContext, "dialogs" | "notify">, entry: TourStop | null) {
+  touchActivity();
   const { paths } = state;
   if (!paths) {
     ctx.notify(NO_TOUR, "warning");
@@ -627,6 +655,13 @@ function startPolling(ctx: ExtensionEventContext, access: TourAccess) {
 export function registerQa(hunk: HunkExtensionAPI, access: TourAccess) {
   hunk.on("changeset_loaded", (_payload, ctx) => startPolling(ctx, access));
   hunk.on("session_reload", (_payload, ctx) => startPolling(ctx, access));
+  hunk.on("command_executed", touchActivity);
+  hunk.on("selection_changed", touchActivity);
+  hunk.on("file_viewed", touchActivity);
+  hunk.on("hunk_viewed", touchActivity);
+  hunk.on("filter_changed", touchActivity);
+  hunk.on("note_created", touchActivity);
+  hunk.on("note_edited", touchActivity);
   hunk.on("note_created", ({ note }, ctx) => onNoteCreated(note, ctx, access));
   hunk.on("shutdown", () => {
     if (poller) clearInterval(poller);

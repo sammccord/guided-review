@@ -17,6 +17,7 @@ This file lists all notable changes to this project. The format follows [Keep a 
 
 ### Changed
 
+- `tour wait` keeps the agent waiting on `idle` and reports `away` only after 30 minutes without reviewer activity, configurable with `--away`.
 - The `cleanup` command from `prepare.py` also removes the review's `.tour.qa` directory.
 - The README and install guide lead with `npx skills add sammccord/guided-review -g`, which installs the skill without a clone. The clone and `scripts/install.sh` route remains for contributors.
 

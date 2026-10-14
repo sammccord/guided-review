@@ -16,6 +16,7 @@ import {
   postPlan,
   requestLabel,
   reviewEnd,
+  reviewerIdleMs,
   statusText,
   transcript,
   type Answer,
@@ -97,6 +98,9 @@ describe("parse", () => {
     expect(parseHeartbeat({ pid: 1, until: "2026" })).toEqual({ pid: 1, until: "2026" });
     expect(parseHeartbeat({ pid: 0, until: "2026" })).toBeNull();
     expect(parseSession(session)).toEqual(session);
+    const active = { ...session, activeAt: "2026-10-14T10:00:00Z" };
+    expect(parseSession(JSON.parse(JSON.stringify(active)))).toEqual(active);
+    expect(parseSession({ ...session, activeAt: 3 })).toBeNull();
     const ended = { ...session, finishedAt: "t1", closedAt: "t2" };
     expect(parseSession(ended)).toEqual(ended);
     expect(parseSession({ ...session, finishedAt: 3 })).toBeNull();
@@ -198,6 +202,40 @@ describe("projections", () => {
     expect(requestLabel(request(1, { kind: "ask", text: "x".repeat(100) }))).toBe(`${"x".repeat(79)}…`);
     expect(requestLabel(request(4, { kind: "decision", decision: "disagree", comment: "nope" }))).toBe("Stop 2 · disagree: nope");
     expect(requestLabel(request(5, { kind: "comment" }))).toBe("Post to PR: #2 Loop bound");
+  });
+});
+
+describe("reviewerIdleMs", () => {
+  const now = Date.parse("2026-10-14T10:10:00Z");
+
+  test("no session has no idle time", () => {
+    expect(reviewerIdleMs(emptyMailbox(), now)).toBeNull();
+  });
+
+  test("uses openedAt without activity", () => {
+    expect(reviewerIdleMs(mailbox([], [], { session }), now)).toBe(70 * 60_000);
+  });
+
+  test("newer activeAt wins", () => {
+    expect(reviewerIdleMs(mailbox([], [], { session: { ...session, activeAt: "2026-10-14T10:09:00Z" } }), now)).toBe(60_000);
+  });
+
+  test("newer request wins", () => {
+    const box = mailbox([samples.ask(1, { at: "2026-10-14T10:08:00Z" })], [], {
+      session: { ...session, activeAt: "2026-10-14T10:07:00Z" },
+    });
+    expect(reviewerIdleMs(box, now)).toBe(2 * 60_000);
+  });
+
+  test("newer answer wins and invalid dates are ignored", () => {
+    const box = mailbox([samples.ask(1, { at: "invalid" })], [answer("q-1")], {
+      session: { ...session, activeAt: "invalid" },
+    });
+    expect(reviewerIdleMs(box, now)).toBe(5 * 60_000);
+  });
+
+  test("future activity clamps idle time to zero", () => {
+    expect(reviewerIdleMs(mailbox([], [], { session }), Date.parse(session.openedAt) - 1)).toBe(0);
   });
 });
 

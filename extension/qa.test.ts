@@ -153,6 +153,11 @@ describe("tour wait and answer", () => {
   test("rejects bad arguments", async () => {
     expect((await run(runWait, [], dir)).result).toEqual({ kind: "exit", code: 2 });
     expect((await run(runWait, ["a.tour.json", "--timeout", "x"], dir)).stderr).toContain("--timeout");
+    for (const value of ["x", "0", "-1", "Infinity", undefined]) {
+      const result = await run(runWait, ["a.tour.json", "--away", ...(value === undefined ? [] : [value])], dir);
+      expect(result.result).toEqual({ kind: "exit", code: 2 });
+      expect(result.stderr).toBe("tour wait: --away needs a positive number of minutes\n");
+    }
     expect((await run(runAnswer, ["a.tour.json", "q-1"], dir)).result).toEqual({ kind: "exit", code: 2 });
     expect((await run(runAnswer, ["a.tour.json", "q-1", "--text", "  "], dir)).result).toEqual({ kind: "exit", code: 2 });
   });
@@ -161,10 +166,48 @@ describe("tour wait and answer", () => {
     const tour = join(dir, "idle.tour.json");
     const { result, stdout } = await run(runWait, ["idle.tour.json", "--timeout", "0.2"], dir);
     expect(result).toEqual({ kind: "exit", code: 0 });
-    expect(json(stdout)).toEqual({ kind: "idle", next: "wait again" });
+    expect(json(stdout)).toEqual({ kind: "idle", idleMinutes: 0, next: "wait again; do not end your turn" });
     const beat = await Bun.file(mailboxPaths(tour).agent).json();
     expect(beat.pid).toBe(process.pid);
     expect(Date.parse(beat.until)).toBeGreaterThan(Date.now() - 5000);
+  });
+
+  test("away after 30 minutes without reviewer activity", async () => {
+    const tour = join(dir, "away.tour.json");
+    await writeJsonAtomic(mailboxPaths(tour).session, session(tour, { openedAt: new Date(Date.now() - 31 * 60_000).toISOString() }));
+    const { result, stdout } = await run(runWait, [tour, "--timeout", "0.01"], dir);
+    expect(result).toEqual({ kind: "exit", code: 0 });
+    expect(json(stdout)).toEqual({
+      kind: "away", idleMinutes: 31, next: "stop waiting; tell the reviewer the agent paused and to say when to resume",
+    });
+  });
+
+  test("recent activity keeps an old session idle", async () => {
+    const tour = join(dir, "active.tour.json");
+    await writeJsonAtomic(mailboxPaths(tour).session, session(tour, {
+      openedAt: new Date(Date.now() - 60 * 60_000).toISOString(), activeAt: new Date().toISOString(),
+    }));
+    const { result, stdout } = await run(runWait, [tour, "--timeout", "0.01"], dir);
+    expect(result).toEqual({ kind: "exit", code: 0 });
+    expect(json(stdout)).toEqual({ kind: "idle", idleMinutes: 0, next: "wait again; do not end your turn" });
+  });
+
+  test("away accepts a custom positive threshold", async () => {
+    const tour = join(dir, "custom-away.tour.json");
+    await writeJsonAtomic(mailboxPaths(tour).session, session(tour, { openedAt: new Date(Date.now() - 60_000).toISOString() }));
+    expect(json((await run(runWait, [tour, "--timeout", "0.01", "--away", "0.5"], dir)).stdout).kind).toBe("away");
+  });
+
+  test("most recently active open tour wins, including an unopened tour", async () => {
+    const old = join(dir, "stack-old.tour.json");
+    const recent = join(dir, "stack-recent.tour.json");
+    const unopened = join(dir, "stack-unopened.tour.json");
+    await writeJsonAtomic(mailboxPaths(old).session, session(old, { openedAt: new Date(Date.now() - 60 * 60_000).toISOString() }));
+    await writeJsonAtomic(mailboxPaths(recent).session, session(recent, { openedAt: new Date().toISOString() }));
+    expect(json((await run(runWait, [old, recent, "--timeout", "0.01"], dir)).stdout).kind).toBe("idle");
+    await writeJsonAtomic(mailboxPaths(recent).session, session(recent, { openedAt: new Date().toISOString(), finishedAt: "t9" }));
+    expect(json((await run(runWait, [old, recent, "--timeout", "0.01"], dir)).stdout).kind).toBe("away");
+    expect(json((await run(runWait, [old, unopened, "--timeout", "0.01"], dir)).stdout).kind).toBe("idle");
   });
 
   test("pending items across tours, and a long heartbeat while answering", async () => {

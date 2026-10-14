@@ -54,6 +54,7 @@ export interface SessionRecord {
   head: string;
   pid: number;
   openedAt: string;
+  activeAt?: string;
   finishedAt?: string;
   closedAt?: string;
 }
@@ -172,13 +173,15 @@ export function parseSession(raw: unknown): SessionRecord | null {
   if (!isString(repo) || !isString(tourPath) || !isString(head) || !isPositiveInteger(pid) || !isString(openedAt)) return null;
   const finishedAt = optionalString(raw.finishedAt);
   const closedAt = optionalString(raw.closedAt);
-  if (finishedAt === null || closedAt === null) return null;
+  const activeAt = optionalString(raw.activeAt);
+  if (finishedAt === null || closedAt === null || activeAt === null) return null;
   return {
     repo,
     tourPath,
     head,
     pid,
     openedAt,
+    ...(activeAt === undefined ? {} : { activeAt }),
     ...(finishedAt === undefined ? {} : { finishedAt }),
     ...(closedAt === undefined ? {} : { closedAt }),
   };
@@ -248,6 +251,18 @@ export function commentStatus(box: Mailbox, stopNumber: number): CommentStatus {
 }
 
 export type AgentStatus = { kind: "listening" } | { kind: "away"; sinceMs: number } | { kind: "never" };
+
+export function reviewerIdleMs(box: Mailbox, now: number): number | null {
+  if (!box.session) return null;
+  const times = [
+    box.session.openedAt,
+    ...(box.session.activeAt === undefined ? [] : [box.session.activeAt]),
+    ...box.requests.map((request) => request.at),
+    ...[...box.answers.values()].map((answer) => answer.at),
+  ].map(Date.parse).filter((time) => !Number.isNaN(time));
+  const last = Math.max(...times);
+  return Math.max(0, now - last);
+}
 
 export function agentStatus(box: Mailbox, now: number): AgentStatus {
   if (!box.heartbeat) return { kind: "never" };
