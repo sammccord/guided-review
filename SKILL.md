@@ -162,7 +162,7 @@ Reply with the verdict and the intent statement. List the tracks, each with a on
 
 When step 9 ended with `finished` or `closed`, add a review draft after the report. Use `decisions` and `transcript`. For each decided stop, give the decision, the reviewer's comment, and what you answered. Lead with the `disagree` and `unsure` stops. Then propose the overall verdict the decisions support, and the comments the reviewer could post to the author. The draft is text in your reply. Post nothing else to GitHub except the explicitly confirmed approval below.
 
-After the draft, check `approval` for each tour. If `eligible` is false, briefly say why. Do not ask to approve it. If `eligible` is true, also judge the full transcript. Decision comments, questions, and your own replies must have no unresolved concerns. Eligibility alone is not permission. If any qualms remain, do not ask or approve.
+After the draft, check `approval` for each tour. If `eligible` is false, briefly say why. Do not ask to approve it. If `eligible` is true, also judge the full transcript. Decision comments, questions, and your own replies must have no unresolved concerns. A request the review ended before you answered counts as unresolved until your draft addresses it. Eligibility alone is not permission. If any qualms remain, do not ask or approve.
 
 Only when eligible and free of qualms, end your reply by explicitly asking: “Approve PR #N at head <sha>?” Wait for an explicit yes in the agent chat. Only then run:
 
@@ -170,4 +170,4 @@ Only when eligible and free of qualms, end your reply by explicitly asking: “A
 hunk --extension <skill> tour approve <tour.json> --body '<short summary>'
 ```
 
-Never approve without that yes. For a stack, get confirmation for each layer's PR and head, then run one approval per confirmed layer tour. The CLI rechecks the verdict, latest decisions, undecided stops, pending replies, and current PR head. It refuses any blocker. It records approval in `approved.json` and avoids reposting an approval at the same head.
+Never approve without that yes. For a stack, get confirmation for each layer's PR and head, then run one approval per confirmed layer tour. The CLI rechecks the verdict, latest decisions, undecided stops, and current PR head. It refuses any blocker. It records approval in `approved.json` and avoids reposting an approval at the same head.

@@ -238,8 +238,6 @@ export function approvalBlockers(verdict: Verdict, stopCount: number, box: Mailb
     if (!latest.has(stop)) undecided++;
   }
   if (undecided > 0) blockers.push(`${undecided} of ${stopCount} stops undecided`);
-  const waiting = pending(box).length;
-  if (waiting > 0) blockers.push(`${waiting} requests awaiting a reply`);
   return blockers;
 }
 

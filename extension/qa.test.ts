@@ -194,7 +194,7 @@ describe("tour wait and answer", () => {
     const payload = json(stdout);
     expect(payload.kind).toBe("finished");
     expect(payload.decisions).toEqual([{ tour, stop: 2, decision: "unsure" }]);
-    expect(payload.approval).toEqual([{ tour, eligible: false, blockers: ["stop 2: unsure", "1 of 2 stops undecided", "1 requests awaiting a reply"] }]);
+    expect(payload.approval).toEqual([{ tour, eligible: false, blockers: ["stop 2: unsure", "1 of 2 stops undecided"] }]);
     expect(payload.transcript.map((entry: { request: Request; status: string }) => [entry.request.id, entry.status])).toEqual([
       ["q-1", "noted"],
       ["q-2", "pending"],
@@ -231,21 +231,21 @@ describe("tour wait and answer", () => {
     expect((await run(runApprove, ["missing.json"], dir)).result).toEqual({ kind: "exit", code: 1 });
   });
 
-  test.each(["open", "disagree", "unsure", "undecided", "pending", "verdict", "no-url"])("approve refuses %s before contacting GitHub", async (scenario) => {
+  test.each(["open", "disagree", "unsure", "undecided", "verdict", "no-url"])("approve refuses %s before contacting GitHub", async (scenario) => {
     const tour = join(dir, `refuse-${scenario}.tour.json`);
     const paths = mailboxPaths(tour);
     await writeJsonAtomic(tour, { ...tourData, verdict: scenario === "verdict" ? "discuss" : "approve", url: scenario === "no-url" ? undefined : tourData.url });
     await writeJsonAtomic(paths.session, session(tour, scenario === "open" ? {} : { finishedAt: "t9" }));
     await writeJsonAtomic(requestPath(paths, "q-1"), { ...decision(1, "agree"), stop: { ...stop, number: 1 } });
     if (scenario !== "undecided") {
-      await writeJsonAtomic(requestPath(paths, "q-2"), decision(2, scenario === "disagree" ? "disagree" : scenario === "unsure" ? "unsure" : "agree", scenario === "pending" ? "Why?" : ""));
+      await writeJsonAtomic(requestPath(paths, "q-2"), decision(2, scenario === "disagree" ? "disagree" : scenario === "unsure" ? "unsure" : "agree"));
       if (scenario === "disagree" || scenario === "unsure") {
         await writeJsonAtomic(answerPath(paths, "q-2"), { id: "q-2", commentId: null, text: "Answered", at: "t8" });
       }
     }
     const result = await run(runApprove, [tour], dir);
     expect(result.result).toEqual({ kind: "exit", code: 1 });
-    const reason = { open: "review has not ended", disagree: "stop 2: disagree", unsure: "stop 2: unsure", undecided: "1 of 2 stops undecided", pending: "1 requests awaiting a reply", verdict: "verdict is discuss", "no-url": "tour has no PR url" }[scenario];
+    const reason = { open: "review has not ended", disagree: "stop 2: disagree", unsure: "stop 2: unsure", undecided: "1 of 2 stops undecided", verdict: "verdict is discuss", "no-url": "tour has no PR url" }[scenario];
     expect(result.stderr).toContain(reason!);
     expect(await Bun.file(paths.approved).exists()).toBe(false);
   });
