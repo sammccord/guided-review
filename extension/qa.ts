@@ -15,6 +15,7 @@ import {
   DECISIONS,
   decisions,
   emptyMailbox,
+  ownsSession,
   pending,
   postPlan,
   requestLabel,
@@ -36,6 +37,7 @@ import {
   mailboxPaths,
   nextSeq,
   readMailbox,
+  readSessionSync,
   requestPath,
   writeJsonAtomic,
   writeJsonAtomicSync,
@@ -295,6 +297,7 @@ export async function openSession(input: { repo: string; tourPath: string; head:
 
 async function writeSession(patch: Partial<SessionRecord>): Promise<void> {
   if (!state.paths || !state.session) return;
+  if (!ownsSession(readSessionSync(state.paths.session), state.session)) return;
   const session = { ...state.session, ...patch };
   setState({ ...state, session });
   await writeJsonAtomic(state.paths.session, session);
@@ -403,6 +406,7 @@ async function finish(ctx: ExtensionCommandContext) {
 
 function close() {
   if (!state.paths || !state.session) return;
+  if (!ownsSession(readSessionSync(state.paths.session), state.session)) return;
   writeJsonAtomicSync(state.paths.session, { ...state.session, closedAt: now() });
 }
 

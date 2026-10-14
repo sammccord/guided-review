@@ -55,8 +55,8 @@ export interface SessionRecord {
   closedAt?: string;
 }
 
-export function ownsSession(_onDisk: SessionRecord | null, _mine: SessionRecord): boolean {
-  throw new Error("not implemented");
+export function ownsSession(onDisk: SessionRecord | null, mine: SessionRecord): boolean {
+  return onDisk !== null && onDisk.pid === mine.pid && onDisk.openedAt === mine.openedAt;
 }
 
 export interface Mailbox {

@@ -1,7 +1,7 @@
-import { mkdirSync, renameSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { parseAnswer, parseHeartbeat, parseRequest, parseSession, type Answer, type Mailbox, type Request } from "./qa";
+import { parseAnswer, parseHeartbeat, parseRequest, parseSession, type Answer, type Mailbox, type Request, type SessionRecord } from "./qa";
 
 export interface MailboxPaths {
   root: string;
@@ -36,6 +36,14 @@ async function readJson(path: string): Promise<unknown> {
     return JSON.parse(await readFile(path, "utf8"));
   } catch {
     return undefined;
+  }
+}
+
+export function readSessionSync(path: string): SessionRecord | null {
+  try {
+    return parseSession(JSON.parse(readFileSync(path, "utf8")));
+  } catch {
+    return null;
   }
 }
 
