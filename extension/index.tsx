@@ -452,7 +452,8 @@ function StopRow({
           <box style={{ flexDirection: "row", marginTop: 1, backgroundColor: bg }}>
             <box
               style={{ marginRight: 1, backgroundColor: bg }}
-              onMouseDown={(event: MouseEvent) => {
+              onMouseDown={(event: MouseEvent) => event.stopPropagation()}
+              onMouseUp={(event: MouseEvent) => {
                 event.stopPropagation();
                 onDecide();
               }}
