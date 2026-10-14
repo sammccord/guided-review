@@ -42,7 +42,7 @@ import {
   type Verdict,
 } from "../core/src/index";
 import { readDiffRanges } from "../core/src/git";
-import { decisionBadge, openSession, QA_USAGE, registerQa, requestComment, runAnswer, runWait, useMailbox, type TourAccess } from "./qa";
+import { decisionBadge, openSession, qaHint, QA_KEYS, QA_USAGE, registerQa, requestComment, requestDecision, runAnswer, runWait, useMailbox, type TourAccess } from "./qa";
 import { toSidecar } from "./sidecar";
 
 const PANE_ID = "tour";
@@ -190,7 +190,8 @@ function apply(ctx: ExtensionCommandContext, tourMove: TourMove, describe: Descr
   }
   const result = move(stops, tour.tracks.length, cursor, tourMove);
   if (!result.ok) {
-    ctx.notify(result.reason);
+    ctx.notify(tourMove.kind === "next" && cursor.current === stops.length - 1
+      ? `End of tour. Press ${QA_KEYS.finish} to finish the review.` : result.reason);
     return;
   }
   ctx.panes.open(PANE_ID);
@@ -396,6 +397,8 @@ function StopRow({
   onSelect,
   onFollow,
   onComment,
+  onDecide,
+  keybindings,
 }: {
   stop: Stop;
   /** Global position in the tour, 0-based. */
@@ -410,6 +413,8 @@ function StopRow({
   onSelect: () => void;
   onFollow: (target: TourStop) => void;
   onComment: () => void;
+  onDecide: () => void;
+  keybindings: Partial<ExtensionPaneProps["keybindings"]> | undefined;
 }) {
   const bg = current ? theme.selectedHunk : theme.panel;
   return (
@@ -440,20 +445,32 @@ function StopRow({
               attributes={TextAttributes.BOLD}
             />
           </box>
+          <text content={qaHint(keybindings)} fg={theme.muted} bg={bg} wrapMode="word" />
           <LinkRows label="Links" arrow="→" targets={links.linksFrom(index)} bg={bg} theme={theme} onFollow={onFollow} />
           <LinkRows label="Linked from" arrow="←" targets={links.linksTo(index)} bg={bg} theme={theme} onFollow={onFollow} />
-          <box
-            style={{ marginTop: 1, backgroundColor: bg }}
-            onMouseDown={(event: MouseEvent) => {
-              event.stopPropagation();
-              if (comment === "none") onComment();
-            }}
-          >
-            <text
-              content={comment === "none" ? "[ Post to PR ]" : comment === "pending" ? "Posting to PR…" : "✓ Posted to PR"}
-              fg={comment === "none" ? theme.accent : theme.muted}
-              bg={bg}
-            />
+          <box style={{ flexDirection: "row", marginTop: 1, backgroundColor: bg }}>
+            <box
+              style={{ marginRight: 1, backgroundColor: bg }}
+              onMouseDown={(event: MouseEvent) => {
+                event.stopPropagation();
+                onDecide();
+              }}
+            >
+              <text content={decision ? `[ Decide: ${decision} ]` : "[ Decide ]"} fg={theme.accent} bg={bg} />
+            </box>
+            <box
+              style={{ backgroundColor: bg }}
+              onMouseDown={(event: MouseEvent) => {
+                event.stopPropagation();
+                if (comment === "none") onComment();
+              }}
+            >
+              <text
+                content={comment === "none" ? "[ Post to PR ]" : comment === "pending" ? "Posting to PR…" : "✓ Posted to PR"}
+                fg={comment === "none" ? theme.accent : theme.muted}
+                bg={bg}
+              />
+            </box>
           </box>
         </box>
       ) : null}
@@ -522,7 +539,7 @@ function StackBlock({ stack, theme }: { stack: TourStack; theme: ExtensionPaneTh
   );
 }
 
-function TourPane({ files, theme, actions }: ExtensionPaneProps): ReactNode {
+function TourPane({ files, theme, actions, keybindings }: ExtensionPaneProps): ReactNode {
   const { tour, stops, links, cursor } = useTourState();
   const mailbox = useMailbox();
   const decided = decisions(mailbox);
@@ -604,6 +621,8 @@ function TourPane({ files, theme, actions }: ExtensionPaneProps): ReactNode {
                   comment={commentStatus(mailbox, entry.number)}
                   links={links}
                   theme={theme}
+                  keybindings={keybindings}
+                  onDecide={() => void requestDecision(entry)}
                   onSelect={() => go({ kind: "goto", index })}
                   onFollow={follow}
                   onComment={() => {

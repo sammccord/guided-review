@@ -8,6 +8,7 @@ import type {
   ExtensionCliWriter,
   ExtensionCommandContext,
   ExtensionEventContext,
+  ExtensionPaneProps,
   ExtensionReviewNote,
   HunkExtensionAPI,
 } from "hunkdiff/extension";
@@ -51,6 +52,15 @@ const ANSWERING_SECONDS = 600;
 const POLL_MS = 1000;
 const TUI_POLL_MS = 2000;
 const STATUS_ID = "qa";
+
+export const QA_KEYS = { decide: "V", ask: "Q", finish: "F" } as const;
+
+export function qaHint(keybindings?: Partial<ExtensionPaneProps["keybindings"]>): string {
+  return Object.entries(QA_KEYS).flatMap(([command, defaultKey]) => {
+    const keys = keybindings?.getKeys?.(`guided-review.${command}`) ?? [defaultKey];
+    return keys.length ? [`${keys.join("/")} ${command}`] : [];
+  }).join(" · ");
+}
 
 export const QA_USAGE = [
   "usage: hunk tour check|open <tour.json>",
@@ -448,13 +458,13 @@ async function ask(ctx: ExtensionCommandContext, access: TourAccess) {
   ctx.notify("Question sent to the agent");
 }
 
-async function decide(ctx: ExtensionCommandContext, access: TourAccess) {
+async function decide(ctx: Pick<ExtensionCommandContext, "dialogs" | "notify">, entry: TourStop | null) {
   const { paths } = state;
   if (!paths) {
     ctx.notify(NO_TOUR, "warning");
     return;
   }
-  const stop = currentStopRef(access);
+  const stop = entry ? stopRef(entry) : null;
   if (!stop) {
     ctx.notify("No current stop. Press > to start the tour.");
     return;
@@ -468,10 +478,26 @@ async function decide(ctx: ExtensionCommandContext, access: TourAccess) {
   ctx.notify(`Stop ${stop.number}: ${decision}`);
 }
 
-async function finish(ctx: ExtensionCommandContext) {
+export async function requestDecision(entry: TourStop): Promise<void> {
+  if (host) await decide(host, entry);
+}
+
+async function finish(ctx: ExtensionCommandContext, access: TourAccess) {
   if (!state.session) {
     ctx.notify(NO_TOUR, "warning");
     return;
+  }
+  const total = access.stopCount();
+  const undecided = total - decisions(state.box).size;
+  const dialogs = ctx.dialogs as Partial<ExtensionCommandContext["dialogs"]>;
+  if (undecided > 0 && dialogs.confirm) {
+    const confirmed = await dialogs.confirm({
+      title: `${undecided} of ${total} stops undecided`,
+      body: "Undecided stops will not reach the review draft. Finish anyway?",
+      confirmLabel: "Finish",
+      cancelLabel: "Keep reviewing",
+    });
+    if (!confirmed) return;
   }
   await writeSession({ finishedAt: now() });
   ctx.notify("Review finished. The agent will draft the review from your decisions.");
@@ -521,7 +547,7 @@ export function registerQa(hunk: HunkExtensionAPI, access: TourAccess) {
     if (poller) clearInterval(poller);
     close();
   });
-  hunk.registerCommand({ id: "ask", title: "Ask the agent", key: "Q" }, (ctx) => ask(ctx, access));
-  hunk.registerCommand({ id: "decide", title: "Decide this stop", key: "V" }, (ctx) => decide(ctx, access));
-  hunk.registerCommand({ id: "finish", title: "Finish review" }, finish);
+  hunk.registerCommand({ id: "ask", title: "Ask the agent", key: QA_KEYS.ask }, (ctx) => ask(ctx, access));
+  hunk.registerCommand({ id: "decide", title: "Decide this stop", key: QA_KEYS.decide }, (ctx) => decide(ctx, access.currentStop()));
+  hunk.registerCommand({ id: "finish", title: "Finish review", key: QA_KEYS.finish }, (ctx) => finish(ctx, access));
 }

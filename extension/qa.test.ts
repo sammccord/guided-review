@@ -5,10 +5,18 @@ import { join } from "node:path";
 import type { ExtensionCliCommandContext, ExtensionCliCommandResult } from "hunkdiff/extension";
 import type { Decision, Request, SessionRecord } from "../core/src/index";
 import { answerPath, mailboxPaths, requestPath, writeJsonAtomic } from "../core/src/mailbox";
-import { githubCommentArgs, parsePullRequestUrl, runAnswer, runWait, sessionAddArgs, sessionIdForPid } from "./qa";
+import { githubCommentArgs, parsePullRequestUrl, qaHint, runAnswer, runWait, sessionAddArgs, sessionIdForPid } from "./qa";
 
 const anchor = { path: "src/a.ts", side: "new" as const, line: 10 };
 const stop = { number: 2, title: "Loop bound", ask: "Block?", anchor };
+
+test("QA hints use resolved bindings, omit unbound commands, and fall back on older hosts", () => {
+  expect(qaHint()).toBe("V decide · Q ask · F finish");
+  expect(qaHint({})).toBe("V decide · Q ask · F finish");
+  expect(qaHint({ getKeys: (id) => id === "guided-review.decide" ? ["D", "ctrl+d"] : id === "guided-review.finish" ? ["X"] : [] }))
+    .toBe("D/ctrl+d decide · X finish");
+  expect(qaHint({ getKeys: () => [] })).toBe("");
+});
 
 describe("sessionAddArgs", () => {
   test("replies thread under the note", () => {

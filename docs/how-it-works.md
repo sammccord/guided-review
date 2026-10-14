@@ -32,6 +32,8 @@ The whole diff stays visible. A tour orders your attention but does not hide any
 
 The agent that wrote the tour holds the whole audit in its context. The reviewer can use that without leaving Hunk. Every note the reviewer adds is a question. A reply under one of the agent's answers is a follow-up. `Q` sends a question. `V` sends a decision on the current stop: `agree`, `disagree`, or `unsure` with an optional comment. The agent answers inline as threaded notes through `hunk session comment add`, and uses the decisions to draft the review at the end.
 
+The current stop shows a muted key hint below **Ask:** and a **Decide** button beside **Post to PR**. The hint follows rebound keys and omits unbound commands. `F` finishes the review and asks for confirmation if stops remain undecided. At the last stop, `>` points to the finish key.
+
 The two sides never share a process, so they talk through files. The mailbox is a directory beside the tour, `<tour>.tour.qa/`:
 
 | Path | Writer | Content |

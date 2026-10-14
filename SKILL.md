@@ -131,6 +131,8 @@ Hunk needs a real terminal. Inside a Neovim terminal the script opens a Neovim t
 
 In hunk, the Tour pane on the right lists the tracks, each with its summary and its stops. `>` and `<` step through stops in tour order. `)` and `(` jump to the next or previous track. The current stop expands with its body, its ask, and its links in both directions. Its **Post to PR** button asks you to turn that stop into a PR comment. `L` follows a link and `B` goes back. A stacked tour also lists every layer of the stack under the verdict and marks the one under review. The whole diff stays visible, with tour files sorted first. `{` and `}` jump between annotated hunks, `a` toggles the inline notes, and `c` adds a note, which comes to you as a question. `V` records the reviewer's decision on the current stop. `Q` asks you a question.
 
+The muted hint below **Ask:** lists the current keys for decide, ask, and finish. Defaults are `V decide · Q ask · F finish`. **Decide** beside **Post to PR** opens the same decision flow as `V` and shows the latest decision. `F` finishes the review. If stops remain undecided, Hunk asks before finishing. Undecided stops do not reach the review draft.
+
 ## 9. Answer the reviewer
 
 The reviewer talks to you from Hunk while the tour is open. Five things become requests. Every note is a question. A reply under one of your answers is a follow-up. `Q` sends a question. `V` sends a decision on a stop: `agree`, `disagree`, or `unsure`, plus an optional comment. **Post to PR** sends a `comment` request for that stop. Run from the worktree, with every open tour of a stack at once:

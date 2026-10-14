@@ -4,6 +4,8 @@ This file lists all notable changes to this project. The format follows [Keep a 
 
 ## Unreleased
 
+- Current stops show decide, ask, and finish keys and a **Decide** button. `F` finishes the review, with confirmation for undecided stops.
+
 ### Added
 
 - **Post to PR** on the current tour stop. The agent rewords the chosen stop for the author, posts a PR line comment through `gh api`, and confirms in Hunk with the link. Requires the tour's PR `url`.
