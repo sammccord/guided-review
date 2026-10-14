@@ -49,11 +49,13 @@ The agent's loop is two commands. `hunk tour wait <tour.json>... [--timeout <sec
 
 ## Why a tour instead of GitHub review comments
 
-The skill's description says it is not for posting review comments to GitHub. That is a deliberate choice, not a missing feature.
+The agent does not post its audit findings to GitHub on its own. That is a deliberate choice.
 
 A review comment speaks to the author, in public, and stays on the PR. An agent's findings are none of those things yet. Some are wrong. Some are right but not worth the author's time. Some are questions only the reviewer can answer, such as whether a 30-second timeout is acceptable for EU traffic. Posting them would give the author a list of claims that no human has checked, with the reviewer's name nearby.
 
 A tour speaks to the reviewer, in private, and goes away when you close Hunk. You read each stop, make the call the ask names, and write the comments you agree with yourself, with `c` in Hunk or on GitHub. The agent does the reading. The human keeps the judgment and the voice.
+
+**Post to PR** is the one exception, triggered only by the reviewer's click on a stop. The agent rewords that stop as feedback for the author. `tour answer` posts it through `gh api` at the tour's `head`, then adds a Hunk note with the GitHub link. A stop anchored outside the PR's diff, or a tour without a PR `url`, fails loudly. A failure after GitHub accepts the comment but before the answer is recorded can duplicate the PR comment on retry.
 
 ## Why stops are small, and why tracks and links exist
 
@@ -94,7 +96,7 @@ The renderer owns everything else: how a stop is revealed, how messages appear, 
 ## Known limits
 
 - **Hunk's extension API is experimental.** `package.json` declares `apiVersion: 25`, and Hunk's own README warns that the API may break between minor releases. The extension was built against Hunk 0.22.0 and the `hunkdiff` 0.23.0 types. On Hunk releases before API 26, the extension cannot tell which files the file filter hides, so a stop in a filtered-out file triggers Hunk's own warning when revealed.
-- **Inline tour notes are read-only.** They come from a sidecar file, so you cannot reply to them, resolve them, or edit them in Hunk. Notes you add with `c` never flow to GitHub. While a tour is open, every note goes to the agent, and its answer arrives as a reply under the note.
+- **Inline tour notes are read-only.** They come from a sidecar file, so you cannot reply to them, resolve them, or edit them in Hunk. Notes you add with `c` never flow to GitHub. While a tour is open, every note goes to the agent, and its answer arrives as a reply under the note. Only clicking a stop's **Post to PR** button asks the agent to post that stop to GitHub.
 - **The tour lives in memory.** Quitting Hunk forgets your position. Reopening the tour starts before stop 1. Decisions and questions are files beside the tour and survive a restart.
 - **Anchors must sit inside the diff.** A stop can only point at lines inside a hunk of `base...head`, context lines included. An unchanged caller in another file cannot be a stop, so the agent cites it in the stop's body instead.
 - **GitHub Enterprise works through `gh`, not `hunk gh`.** `prepare.py` calls `gh pr view` and `gh api --hostname <host>`, so any host `gh` is logged in to works. Stack detection also needs the host to offer the stacks API. Without it, `stackLookup` is `unavailable` and each PR is reviewed alone.

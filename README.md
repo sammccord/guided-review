@@ -158,6 +158,8 @@ While the tour is open, the agent that wrote it waits for you. `V` records your 
 
 Requests and answers are JSON files in a `.tour.qa` directory beside the tour file. The review's `cleanup` command removes it.
 
+Click **Post to PR** on the current stop to have the agent reword it for the author, post a PR line comment, and confirm in Hunk with the link.
+
 ## Repository layout
 
 - `SKILL.md` is the agent skill, the audit and tour workflow the agent follows.

@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { useSyncExternalStore } from "react";
 import type {
@@ -197,6 +198,36 @@ export function sessionAddArgs(plan: PostPlan, sessionId: string): string[] {
   return ["session", "comment", "add", sessionId, ...target, "--summary", plan.summary, ...rationale, "--author", "guided-review", "--json"];
 }
 
+export interface PullRequestTarget {
+  host: string;
+  owner: string;
+  repo: string;
+  number: number;
+}
+
+export function parsePullRequestUrl(url: string): PullRequestTarget | null {
+  const match = /^https?:\/\/([^/]+)\/([^/]+)\/([^/]+)\/pull\/(\d+)/.exec(url);
+  if (!match) return null;
+  return { host: match[1]!, owner: match[2]!, repo: match[3]!, number: Number(match[4]) };
+}
+
+export function githubCommentArgs(target: PullRequestTarget, commitId: string, anchor: Anchor, body: string): string[] {
+  return [
+    "api", "--hostname", target.host, "--method", "POST", `repos/${target.owner}/${target.repo}/pulls/${target.number}/comments`,
+    "-f", `body=${body}`, "-f", `commit_id=${commitId}`, "-f", `path=${anchor.path}`,
+    "-F", `line=${anchor.line}`, "-f", `side=${anchor.side === "new" ? "RIGHT" : "LEFT"}`,
+  ];
+}
+
+function runGh(args: readonly string[], cwd: string): Promise<string> {
+  return new Promise((done, fail) => {
+    execFile("gh", args, { cwd, maxBuffer: 16 * 1024 * 1024 }, (error, stdout, stderr) => {
+      if (error) fail(new Error(String(stderr).trim() || error.message));
+      else done(String(stdout));
+    });
+  });
+}
+
 function runHunk(args: readonly string[]): Promise<string> {
   return new Promise((done, fail) => {
     execFile("hunk", args, { maxBuffer: 16 * 1024 * 1024 }, (error, stdout, stderr) => {
@@ -247,7 +278,27 @@ export async function runAnswer(args: readonly string[], ctx: ExtensionCliComman
     await writeLine(ctx.stderr, `tour answer: ${paths.session} is missing; open the tour in Hunk first`);
     return { kind: "exit", code: 1 };
   }
-  const plan = postPlan(request, parsed.text);
+  let text = parsed.text;
+  if (request.kind === "comment") {
+    try {
+      const tour: unknown = JSON.parse(await readFile(box.session.tourPath, "utf8"));
+      const target =
+        typeof tour === "object" && tour !== null && "url" in tour && typeof tour.url === "string" ? parsePullRequestUrl(tour.url) : null;
+      if (!target) {
+        await writeLine(ctx.stderr, 'tour answer: tour has no PR url; add "url" to the tour or post the comment yourself');
+        return { kind: "exit", code: 1 };
+      }
+      const result: unknown = JSON.parse(await runGh(githubCommentArgs(target, box.session.head, request.stop.anchor, text), box.session.repo));
+      if (typeof result !== "object" || result === null || !("html_url" in result) || typeof result.html_url !== "string") {
+        throw new Error("gh returned no comment html_url");
+      }
+      text = `${text}\n\n${result.html_url}`;
+    } catch (error) {
+      await writeLine(ctx.stderr, `tour answer: PR comment failed: ${error instanceof Error ? error.message : String(error)}`);
+      return { kind: "exit", code: 1 };
+    }
+  }
+  const plan = postPlan(request, text);
   if (plan.summary === "") {
     await writeLine(ctx.stderr, "tour answer: the answer has no text on its first line");
     return { kind: "exit", code: 2 };
@@ -339,6 +390,11 @@ async function writeRequest(paths: MailboxPaths, body: RequestBody): Promise<voi
   const request = { id: `q-${seq}`, seq, at: now(), ...body } as Request;
   await writeJsonAtomic(requestPath(paths, request.id), request);
   setState({ ...state, box: { ...box, requests: [...box.requests, request] } });
+}
+
+export async function requestComment(entry: TourStop): Promise<void> {
+  if (!state.paths) return;
+  await writeRequest(state.paths, { kind: "comment", stop: stopRef(entry), body: entry.stop.body });
 }
 
 export interface TourAccess {

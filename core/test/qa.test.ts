@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   agentStatus,
   classifyNote,
+  commentStatus,
   decisions,
   emptyMailbox,
   needsReply,
@@ -40,6 +41,8 @@ const samples = {
   ask: (seq: number, rest: Partial<Of<"ask">> = {}): Request => ({ ...base(seq), kind: "ask", anchor, text: "general", ...rest }) as Of<"ask">,
   decision: (seq: number, rest: Partial<Of<"decision">> = {}): Of<"decision"> =>
     ({ ...base(seq), kind: "decision", stop: stopRef, decision: "agree", comment: "", ...rest }) as Of<"decision">,
+  comment: (seq: number, rest: Partial<Of<"comment">> = {}): Of<"comment"> =>
+    ({ ...base(seq), kind: "comment", stop: stopRef, body: "- Runs one extra attempt.\n- Test pins the wrong bound.", ...rest }) as Of<"comment">,
 };
 
 function request<K extends Request["kind"]>(seq: number, { kind, ...rest }: { kind: K } & Partial<Of<K>>): Request {
@@ -69,6 +72,7 @@ describe("parse", () => {
       request(2, { kind: "followup" }),
       request(3, { kind: "ask", stop: stopRef }),
       request(4, { kind: "decision", decision: "disagree", comment: "no" }),
+      request(5, { kind: "comment" }),
     ];
     for (const sample of samples) expect(parseRequest(JSON.parse(JSON.stringify(sample)))).toEqual(sample);
     expect(parseRequest(null)).toBeNull();
@@ -78,6 +82,10 @@ describe("parse", () => {
     expect(parseRequest({ ...request(1, { kind: "decision" }), decision: "maybe" })).toBeNull();
     expect(parseRequest({ ...request(1, { kind: "ask" }), kind: "shout" })).toBeNull();
     expect(parseRequest({ ...request(1, { kind: "ask" }), stop: { number: 1 } })).toBeNull();
+    expect(parseRequest({ ...request(1, { kind: "comment" }), stop: null })).toBeNull();
+    expect(parseRequest({ ...request(1, { kind: "comment" }), stop: undefined })).toBeNull();
+    expect(parseRequest({ ...request(1, { kind: "comment" }), body: undefined })).toBeNull();
+    expect(parseRequest({ ...request(1, { kind: "comment" }), body: 7 })).toBeNull();
   });
 
   test("answers, heartbeats, and sessions", () => {
@@ -129,6 +137,7 @@ describe("projections", () => {
     expect(needsReply(request(1, { kind: "decision", decision: "agree", comment: "but" }))).toBe(true);
     expect(needsReply(request(1, { kind: "decision", decision: "disagree", comment: "" }))).toBe(true);
     expect(needsReply(request(1, { kind: "ask" }))).toBe(true);
+    expect(needsReply(request(1, { kind: "comment" }))).toBe(true);
   });
 
   test("pending lists unanswered requests that need a reply, by seq", () => {
@@ -154,9 +163,20 @@ describe("projections", () => {
     ]);
   });
 
+  test("commentStatus tracks comments per stop, with posted taking precedence", () => {
+    expect(commentStatus(emptyMailbox(), 2)).toBe("none");
+    expect(commentStatus(mailbox(requests, [answer("q-3")]), 2)).toBe("none");
+    const comments = [request(1, { kind: "comment" }), request(2, { kind: "comment" })];
+    expect(commentStatus(mailbox(comments), 2)).toBe("pending");
+    expect(commentStatus(mailbox(comments, [answer("q-1")]), 2)).toBe("posted");
+    expect(commentStatus(mailbox(comments, [answer("q-2")]), 2)).toBe("posted");
+    expect(commentStatus(mailbox(comments, [answer("q-1")]), 3)).toBe("none");
+  });
+
   test("requestLabel names a request in one line", () => {
     expect(requestLabel(request(1, { kind: "ask", text: "x".repeat(100) }))).toBe(`${"x".repeat(79)}…`);
     expect(requestLabel(request(4, { kind: "decision", decision: "disagree", comment: "nope" }))).toBe("Stop 2 · disagree: nope");
+    expect(requestLabel(request(5, { kind: "comment" }))).toBe("Post to PR: #2 Loop bound");
   });
 });
 
@@ -238,5 +258,18 @@ describe("postPlan", () => {
       rationale: "Fair point.",
     });
     expect(postPlan(request(5, { kind: "decision", decision: "unsure", comment: "" }), "x").summary).toBe("Stop 2 · unsure");
+  });
+
+  test("comments confirm at the stop with the full text and URL", () => {
+    const text = "Fix the loop bound.\n\nhttps://github.com/o/r/pull/1#discussion_r2";
+    expect(postPlan(request(6, { kind: "comment" }), text)).toEqual({
+      kind: "anchored",
+      anchor,
+      summary: "Posted to PR: Loop bound",
+      rationale: text,
+    });
+    expect(postPlan(request(7, { kind: "comment", stop: { ...stopRef, title: "x".repeat(90) } }), text).summary).toBe(
+      `Posted to PR: ${"x".repeat(65)}…`,
+    );
   });
 });

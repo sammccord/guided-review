@@ -16,6 +16,7 @@ import type {
   HunkExtensionAPI,
 } from "hunkdiff/extension";
 import {
+  commentStatus,
   decisions,
   formatLink,
   indexStops,
@@ -25,6 +26,7 @@ import {
   stackPosition,
   statusText,
   validateTour,
+  type CommentStatus,
   type Decision,
   type StackLayer,
   type Stop,
@@ -40,7 +42,7 @@ import {
   type Verdict,
 } from "../core/src/index";
 import { readDiffRanges } from "../core/src/git";
-import { decisionBadge, openSession, QA_USAGE, registerQa, runAnswer, runWait, useMailbox, type TourAccess } from "./qa";
+import { decisionBadge, openSession, QA_USAGE, registerQa, requestComment, runAnswer, runWait, useMailbox, type TourAccess } from "./qa";
 import { toSidecar } from "./sidecar";
 
 const PANE_ID = "tour";
@@ -388,10 +390,12 @@ function StopRow({
   current,
   related,
   decision,
+  comment,
   links,
   theme,
   onSelect,
   onFollow,
+  onComment,
 }: {
   stop: Stop;
   /** Global position in the tour, 0-based. */
@@ -400,10 +404,12 @@ function StopRow({
   /** Links to or from the current stop. */
   related: boolean;
   decision: Decision | undefined;
+  comment: CommentStatus;
   links: StopIndex;
   theme: ExtensionPaneTheme;
   onSelect: () => void;
   onFollow: (target: TourStop) => void;
+  onComment: () => void;
 }) {
   const bg = current ? theme.selectedHunk : theme.panel;
   return (
@@ -436,6 +442,19 @@ function StopRow({
           </box>
           <LinkRows label="Links" arrow="→" targets={links.linksFrom(index)} bg={bg} theme={theme} onFollow={onFollow} />
           <LinkRows label="Linked from" arrow="←" targets={links.linksTo(index)} bg={bg} theme={theme} onFollow={onFollow} />
+          <box
+            style={{ marginTop: 1, backgroundColor: bg }}
+            onMouseDown={(event: MouseEvent) => {
+              event.stopPropagation();
+              if (comment === "none") onComment();
+            }}
+          >
+            <text
+              content={comment === "none" ? "[ Post to PR ]" : comment === "pending" ? "Posting to PR…" : "✓ Posted to PR"}
+              fg={comment === "none" ? theme.accent : theme.muted}
+              bg={bg}
+            />
+          </box>
         </box>
       ) : null}
     </box>
@@ -582,10 +601,15 @@ function TourPane({ files, theme, actions }: ExtensionPaneProps): ReactNode {
                   current={index === current}
                   related={related.has(entry)}
                   decision={decided.get(entry.number)}
+                  comment={commentStatus(mailbox, entry.number)}
                   links={links}
                   theme={theme}
                   onSelect={() => go({ kind: "goto", index })}
                   onFollow={follow}
+                  onComment={() => {
+                    void requestComment(entry);
+                    actions.notify("Sent to the agent to post");
+                  }}
                 />
               ) : null,
             )}

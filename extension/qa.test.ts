@@ -1,11 +1,11 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionCliCommandContext, ExtensionCliCommandResult } from "hunkdiff/extension";
 import type { Decision, Request, SessionRecord } from "../core/src/index";
 import { answerPath, mailboxPaths, requestPath, writeJsonAtomic } from "../core/src/mailbox";
-import { runAnswer, runWait, sessionAddArgs, sessionIdForPid } from "./qa";
+import { githubCommentArgs, parsePullRequestUrl, runAnswer, runWait, sessionAddArgs, sessionIdForPid } from "./qa";
 
 const anchor = { path: "src/a.ts", side: "new" as const, line: 10 };
 const stop = { number: 2, title: "Loop bound", ask: "Block?", anchor };
@@ -25,6 +25,42 @@ describe("sessionAddArgs", () => {
     ]);
     expect(sessionAddArgs({ kind: "anchored", anchor, summary: "Q: x", rationale: "y" }, "sid-1").slice(4, 8)).toEqual([
       "--file", "src/a.ts", "--new-line", "10",
+    ]);
+  });
+});
+
+describe("parsePullRequestUrl", () => {
+  test("parses GitHub and enterprise PR URLs, including trailing paths and queries", () => {
+    expect(parsePullRequestUrl("https://github.com/owner/repo/pull/42")).toEqual({ host: "github.com", owner: "owner", repo: "repo", number: 42 });
+    expect(parsePullRequestUrl("https://github.example.com/team/project/pull/123/files?diff=split")).toEqual({
+      host: "github.example.com", owner: "team", repo: "project", number: 123,
+    });
+    expect(parsePullRequestUrl("https://github.com/owner/repo/pull/42?diff=split")?.number).toBe(42);
+  });
+
+  test("rejects URLs that do not name a pull request", () => {
+    for (const url of ["", "not a URL", "https://github.com/owner/repo", "https://github.com/owner/repo/issues/42", "https://github.com/o/r/pull/nope"]) {
+      expect(parsePullRequestUrl(url)).toBeNull();
+    }
+  });
+});
+
+describe("githubCommentArgs", () => {
+  const target = { host: "github.example.com", owner: "owner", repo: "repo", number: 42 };
+
+  test("posts at the head SHA and new-side line with the body as one argument", () => {
+    expect(githubCommentArgs(target, "abc123", anchor, "Fix 'the bound'.\nKeep evidence.")).toEqual([
+      "api", "--hostname", "github.example.com", "--method", "POST", "repos/owner/repo/pulls/42/comments",
+      "-f", "body=Fix 'the bound'.\nKeep evidence.", "-f", "commit_id=abc123", "-f", "path=src/a.ts",
+      "-F", "line=10", "-f", "side=RIGHT",
+    ]);
+  });
+
+  test("uses LEFT for an old-side anchor", () => {
+    expect(githubCommentArgs(target, "abc123", { path: "deleted.ts", side: "old", line: 7 }, "Restore this.")).toEqual([
+      "api", "--hostname", "github.example.com", "--method", "POST", "repos/owner/repo/pulls/42/comments",
+      "-f", "body=Restore this.", "-f", "commit_id=abc123", "-f", "path=deleted.ts",
+      "-F", "line=7", "-f", "side=LEFT",
     ]);
   });
 });
@@ -163,5 +199,77 @@ describe("tour wait and answer", () => {
     const unopened = await run(runAnswer, [tour, "q-2", "--text", "x"], dir);
     expect(unopened.result).toEqual({ kind: "exit", code: 1 });
     expect(unopened.stderr).toContain("open the tour in Hunk first");
+  });
+
+  test("comment requests reach wait, but answer fails without a PR URL", async () => {
+    const tour = join(dir, "comment.tour.json");
+    const paths = mailboxPaths(tour);
+    const request: Request = { id: "q-1", seq: 1, at: "t1", kind: "comment", stop, body: "- Runs one extra attempt." };
+    await writeJsonAtomic(paths.session, session(tour));
+    await writeJsonAtomic(requestPath(paths, request.id), request);
+    expect(json((await run(runWait, [tour], dir)).stdout).items).toEqual([{ tour, ...request }]);
+    for (const value of [{}, { url: "not a PR" }, { url: 42 }]) {
+      await writeJsonAtomic(tour, value);
+      const result = await run(runAnswer, [tour, request.id, "--text", "Fix the loop bound."], dir);
+      expect(result.result).toEqual({ kind: "exit", code: 1 });
+      expect(result.stderr).toContain('tour has no PR url; add "url" to the tour or post the comment yourself');
+      expect(await Bun.file(answerPath(paths, request.id)).exists()).toBe(false);
+    }
+  });
+
+  test.each([false, true])("comment answer posts to GitHub before Hunk, gh failure=%s", async (failGh) => {
+    const bin = mkdtempSync(join(dir, "bin-"));
+    const tour = join(bin, "post.tour.json");
+    const paths = mailboxPaths(tour);
+    const callsPath = join(bin, "calls.jsonl");
+    const text = "Use < instead of <= to avoid an extra attempt.";
+    const htmlUrl = "https://github.example.com/o/r/pull/42#discussion_r123";
+    await writeJsonAtomic(tour, { url: "https://github.example.com/o/r/pull/42" });
+    await writeJsonAtomic(paths.session, session(tour, { repo: bin }));
+    await writeJsonAtomic(requestPath(paths, "q-1"), { id: "q-1", seq: 1, at: "t1", kind: "comment", stop, body: "- Extra attempt." });
+    for (const command of ["gh", "hunk"]) {
+      writeFileSync(join(bin, command), `#!${process.execPath}
+import { appendFileSync } from "node:fs";
+const args = process.argv.slice(2);
+appendFileSync(${JSON.stringify(callsPath)}, JSON.stringify({ command: "${command}", args, cwd: process.cwd() }) + "\\n");
+if ("${command}" === "gh" && ${failGh}) {
+  console.error("gh: line must be part of the diff (HTTP 422)");
+  process.exit(1);
+}
+console.log(JSON.stringify("${command}" === "gh"
+  ? { html_url: ${JSON.stringify(htmlUrl)} }
+  : args[1] === "list"
+    ? { sessions: [{ sessionId: "mine", pid: ${process.pid} }] }
+    : { result: { commentId: "mcp:42" } }));
+`, { mode: 0o755 });
+    }
+    const path = process.env.PATH;
+    process.env.PATH = `${bin}:${path ?? ""}`;
+    try {
+      const result = await run(runAnswer, [tour, "q-1", "--text", text], dir);
+      const calls = (await Bun.file(callsPath).text()).trim().split("\n").map(json);
+      expect(calls[0]).toEqual({
+        command: "gh",
+        args: githubCommentArgs({ host: "github.example.com", owner: "o", repo: "r", number: 42 }, "bbb", anchor, text),
+        cwd: realpathSync(bin),
+      });
+      if (failGh) {
+        expect(result.result).toEqual({ kind: "exit", code: 1 });
+        expect(result.stderr).toContain("gh: line must be part of the diff (HTTP 422)");
+        expect(calls).toHaveLength(1);
+        expect(await Bun.file(answerPath(paths, "q-1")).exists()).toBe(false);
+      } else {
+        expect(result.result).toEqual({ kind: "exit", code: 0 });
+        expect(result.stderr).toBe("");
+        expect(calls.map((call) => call.command)).toEqual(["gh", "hunk", "hunk"]);
+        expect(calls[2].args).toEqual(sessionAddArgs({ kind: "anchored", anchor, summary: "Posted to PR: Loop bound", rationale: `${text}\n\n${htmlUrl}` }, "mine"));
+        expect(await Bun.file(answerPath(paths, "q-1")).json()).toMatchObject({ id: "q-1", commentId: "mcp:42", text });
+        expect(json((await run(runAnswer, [tour, "q-1", "--text", text], dir)).stdout).status).toBe("already-answered");
+        expect((await Bun.file(callsPath).text()).trim().split("\n")).toHaveLength(3);
+      }
+    } finally {
+      if (path === undefined) delete process.env.PATH;
+      else process.env.PATH = path;
+    }
   });
 });
