@@ -32,8 +32,8 @@ describe("sessionAddArgs", () => {
 describe("parsePullRequestUrl", () => {
   test("parses GitHub and enterprise PR URLs, including trailing paths and queries", () => {
     expect(parsePullRequestUrl("https://github.com/owner/repo/pull/42")).toEqual({ host: "github.com", owner: "owner", repo: "repo", number: 42 });
-    expect(parsePullRequestUrl("https://github.cbhq.net/team/project/pull/123/files?diff=split")).toEqual({
-      host: "github.cbhq.net", owner: "team", repo: "project", number: 123,
+    expect(parsePullRequestUrl("https://github.example.com/team/project/pull/123/files?diff=split")).toEqual({
+      host: "github.example.com", owner: "team", repo: "project", number: 123,
     });
     expect(parsePullRequestUrl("https://github.com/owner/repo/pull/42?diff=split")?.number).toBe(42);
   });
@@ -46,11 +46,11 @@ describe("parsePullRequestUrl", () => {
 });
 
 describe("githubCommentArgs", () => {
-  const target = { host: "github.cbhq.net", owner: "owner", repo: "repo", number: 42 };
+  const target = { host: "github.example.com", owner: "owner", repo: "repo", number: 42 };
 
   test("posts at the head SHA and new-side line with the body as one argument", () => {
     expect(githubCommentArgs(target, "abc123", anchor, "Fix 'the bound'.\nKeep evidence.")).toEqual([
-      "api", "--hostname", "github.cbhq.net", "--method", "POST", "repos/owner/repo/pulls/42/comments",
+      "api", "--hostname", "github.example.com", "--method", "POST", "repos/owner/repo/pulls/42/comments",
       "-f", "body=Fix 'the bound'.\nKeep evidence.", "-f", "commit_id=abc123", "-f", "path=src/a.ts",
       "-F", "line=10", "-f", "side=RIGHT",
     ]);
@@ -58,7 +58,7 @@ describe("githubCommentArgs", () => {
 
   test("uses LEFT for an old-side anchor", () => {
     expect(githubCommentArgs(target, "abc123", { path: "deleted.ts", side: "old", line: 7 }, "Restore this.")).toEqual([
-      "api", "--hostname", "github.cbhq.net", "--method", "POST", "repos/owner/repo/pulls/42/comments",
+      "api", "--hostname", "github.example.com", "--method", "POST", "repos/owner/repo/pulls/42/comments",
       "-f", "body=Restore this.", "-f", "commit_id=abc123", "-f", "path=deleted.ts",
       "-F", "line=7", "-f", "side=LEFT",
     ]);
@@ -223,8 +223,8 @@ describe("tour wait and answer", () => {
     const paths = mailboxPaths(tour);
     const callsPath = join(bin, "calls.jsonl");
     const text = "Use < instead of <= to avoid an extra attempt.";
-    const htmlUrl = "https://github.cbhq.net/o/r/pull/42#discussion_r123";
-    await writeJsonAtomic(tour, { url: "https://github.cbhq.net/o/r/pull/42" });
+    const htmlUrl = "https://github.example.com/o/r/pull/42#discussion_r123";
+    await writeJsonAtomic(tour, { url: "https://github.example.com/o/r/pull/42" });
     await writeJsonAtomic(paths.session, session(tour, { repo: bin }));
     await writeJsonAtomic(requestPath(paths, "q-1"), { id: "q-1", seq: 1, at: "t1", kind: "comment", stop, body: "- Extra attempt." });
     for (const command of ["gh", "hunk"]) {
@@ -250,7 +250,7 @@ console.log(JSON.stringify("${command}" === "gh"
       const calls = (await Bun.file(callsPath).text()).trim().split("\n").map(json);
       expect(calls[0]).toEqual({
         command: "gh",
-        args: githubCommentArgs({ host: "github.cbhq.net", owner: "o", repo: "r", number: 42 }, "bbb", anchor, text),
+        args: githubCommentArgs({ host: "github.example.com", owner: "o", repo: "r", number: 42 }, "bbb", anchor, text),
         cwd: realpathSync(bin),
       });
       if (failGh) {

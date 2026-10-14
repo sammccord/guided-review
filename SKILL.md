@@ -146,7 +146,7 @@ It blocks until something needs you, then prints one JSON line. Its `next` field
   hunk --extension <skill> tour answer <tour.json> <id> --text '<answer>'
   ```
   The answer appears in Hunk as a reply under the reviewer's note, or as a note at the line or stop the request names. The first line becomes the note's summary, so keep it short. For a `decision`, say whether you agree and why. An `agree` with no comment never reaches you.
-- A `comment` request carries the stop's `title`, `ask`, and `anchor` in `stop`, plus its full `body`. Reword it slightly as actionable feedback for the author: what to change and why. Keep the facts and evidence. Turn the reviewer-facing ask into a request or question to the author. Drop `[[id]]` tour links and bullets-for-the-reviewer framing. Keep it short. `tour answer` posts it as a line comment on the PR at the stop, then confirms in Hunk with the GitHub link.
+- A `comment` request carries the stop's `title`, `ask`, and `anchor` in `stop`, plus its full `body`. Reword it slightly as actionable feedback for the author: what to change and why. Keep the facts and evidence. Turn the reviewer-facing ask into a request or question to the author. Drop `[[id]]` tour links. Keep it short. `tour answer` posts it as a line comment on the PR at the stop, then confirms in Hunk with the GitHub link.
 - `idle`. Nothing arrived before the timeout. Run `wait` again.
 - `finished` or `closed`. The reviewer chose **Finish review** in the Extensions menu, or quit Hunk. The payload has `decisions`, the latest decision per stop, and `transcript`, every request with its status and your answer. Go to step 10.
 
