@@ -29,7 +29,8 @@ export type Request =
   | (RequestBase & { kind: "question"; noteId: string; anchor: Anchor; text: string })
   | (RequestBase & { kind: "followup"; noteId: string; parentId: string; anchor: Anchor; text: string })
   | (RequestBase & { kind: "ask"; anchor: Anchor; text: string })
-  | (RequestBase & { kind: "decision"; stop: StopRef; decision: Decision; comment: string });
+  | (RequestBase & { kind: "decision"; stop: StopRef; decision: Decision; comment: string })
+  | (RequestBase & { kind: "comment"; stop: StopRef; body: string });
 
 export type RequestKind = Request["kind"];
 
@@ -140,6 +141,10 @@ export function parseRequest(raw: unknown): Request | null {
       if (!base.stop || !DECISIONS.some((candidate) => candidate === decision) || !isString(comment)) return null;
       return { ...base, kind, stop: base.stop, decision: decision as Decision, comment };
     }
+    case "comment": {
+      if (!base.stop || !isString(raw.body)) return null;
+      return { ...base, kind, stop: base.stop, body: raw.body };
+    }
     default:
       return null;
   }
@@ -215,6 +220,14 @@ export function decisions(box: Mailbox): Map<number, Decision> {
     if (request.kind === "decision") latest.set(request.stop.number, request.decision);
   }
   return latest;
+}
+
+export type CommentStatus = "none" | "pending" | "posted";
+
+export function commentStatus(box: Mailbox, stopNumber: number): CommentStatus {
+  const comments = box.requests.filter((request) => request.kind === "comment" && request.stop.number === stopNumber);
+  if (comments.some((request) => box.answers.has(request.id))) return "posted";
+  return comments.length > 0 ? "pending" : "none";
 }
 
 export type AgentStatus = { kind: "listening" } | { kind: "away"; sinceMs: number } | { kind: "never" };
@@ -293,6 +306,8 @@ export function postPlan(request: Request, text: string): PostPlan {
       return { kind: "anchored", anchor: request.anchor, summary: truncate(`Q: ${request.text}`), rationale: text };
     case "decision":
       return { kind: "anchored", anchor: request.stop.anchor, summary: truncate(decisionLabel(request)), rationale: text };
+    case "comment":
+      return { kind: "anchored", anchor: request.stop.anchor, summary: truncate(`Posted to PR: ${request.stop.title}`), rationale: text };
   }
 }
 
@@ -304,6 +319,8 @@ export function requestLabel(request: Request): string {
       return truncate(request.text);
     case "decision":
       return truncate(decisionLabel(request));
+    case "comment":
+      return truncate(`Post to PR: #${request.stop.number} ${request.stop.title}`);
   }
 }
 
