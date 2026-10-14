@@ -37,10 +37,10 @@ import {
   type Verdict,
 } from "../core/src/index";
 import { readDiffRanges } from "../core/src/git";
+import { QA_USAGE, runAnswer, runWait } from "./qa";
 import { toSidecar } from "./sidecar";
 
 const PANE_ID = "tour";
-const USAGE = "usage: hunk tour check|open <tour.json>";
 
 interface TourState {
   tour: Tour | null;
@@ -90,8 +90,10 @@ async function writeSidecar(tour: Tour): Promise<string> {
 
 async function runTourCli(args: readonly string[], ctx: ExtensionCliCommandContext): Promise<ExtensionCliCommandResult> {
   const [subcommand, file, ...extra] = args;
+  if (subcommand === "wait") return runWait(args.slice(1), ctx);
+  if (subcommand === "answer") return runAnswer(args.slice(1), ctx);
   if ((subcommand !== "check" && subcommand !== "open") || !file || extra.length > 0) {
-    await writeLines(ctx.stderr, [USAGE]);
+    await writeLines(ctx.stderr, QA_USAGE);
     return { kind: "exit", code: 2 };
   }
 
@@ -582,7 +584,10 @@ function TourPane({ files, theme, actions }: ExtensionPaneProps): ReactNode {
 }
 
 export default function registerGuidedReview(hunk: HunkExtensionAPI) {
-  hunk.registerCliCommand({ name: "tour", summary: "Check or open a guided review tour", usage: "check|open <tour.json>" }, runTourCli);
+  hunk.registerCliCommand(
+    { name: "tour", summary: "Check, open, or answer a guided review tour", usage: "check|open|wait|answer <tour.json> ..." },
+    runTourCli,
+  );
 
   hunk.registerPane({
     id: PANE_ID,
