@@ -16,13 +16,16 @@ import type {
   HunkExtensionAPI,
 } from "hunkdiff/extension";
 import {
+  decisions,
   formatLink,
   indexStops,
   initialCursor,
   move,
   segmentText,
   stackPosition,
+  statusText,
   validateTour,
+  type Decision,
   type StackLayer,
   type Stop,
   type StopIndex,
@@ -37,7 +40,7 @@ import {
   type Verdict,
 } from "../core/src/index";
 import { readDiffRanges } from "../core/src/git";
-import { QA_USAGE, runAnswer, runWait } from "./qa";
+import { decisionBadge, openSession, QA_USAGE, registerQa, runAnswer, runWait, useMailbox, type TourAccess } from "./qa";
 import { toSidecar } from "./sidecar";
 
 const PANE_ID = "tour";
@@ -120,6 +123,7 @@ async function runTourCli(args: readonly string[], ctx: ExtensionCliCommandConte
 
   const sidecarPath = await writeSidecar(tour);
   setState({ tour, stops, links: index, cursor: initialCursor() });
+  await openSession({ repo: ctx.cwd, tourPath: resolve(ctx.cwd, file), head: tour.head });
   return { kind: "delegate", argv: ["diff", `${tour.base}...${tour.head}`, "--agent-context", sidecarPath, "--agent-notes"] };
 }
 
@@ -242,6 +246,17 @@ function verdictColor(verdict: Verdict, theme: ExtensionPaneTheme): string {
     case "request-changes":
       return theme.badgeRemoved;
     case "discuss":
+      return theme.accent;
+  }
+}
+
+function decisionColor(decision: Decision, theme: ExtensionPaneTheme): string {
+  switch (decision) {
+    case "agree":
+      return theme.badgeAdded;
+    case "disagree":
+      return theme.badgeRemoved;
+    case "unsure":
       return theme.accent;
   }
 }
@@ -372,6 +387,7 @@ function StopRow({
   index,
   current,
   related,
+  decision,
   links,
   theme,
   onSelect,
@@ -383,6 +399,7 @@ function StopRow({
   current: boolean;
   /** Links to or from the current stop. */
   related: boolean;
+  decision: Decision | undefined;
   links: StopIndex;
   theme: ExtensionPaneTheme;
   onSelect: () => void;
@@ -396,6 +413,7 @@ function StopRow({
           <span fg={theme.text}>{`${current ? "▸" : " "}${index + 1}. `}</span>
           {related ? <span fg={theme.accent}>{"↔ "}</span> : null}
           <span fg={kindColor(stop.kind, theme)}>{`[${stop.kind}] `}</span>
+          {decision ? <span fg={decisionColor(decision, theme)}>{`${decisionBadge(decision)} `}</span> : null}
           <span fg={theme.text}>{stop.title}</span>
         </text>
       </box>
@@ -487,6 +505,8 @@ function StackBlock({ stack, theme }: { stack: TourStack; theme: ExtensionPaneTh
 
 function TourPane({ files, theme, actions }: ExtensionPaneProps): ReactNode {
   const { tour, stops, links, cursor } = useTourState();
+  const mailbox = useMailbox();
+  const decided = decisions(mailbox);
   const { current } = cursor;
   const scrollRef = useRef<ScrollBoxRenderable | null>(null);
 
@@ -530,6 +550,9 @@ function TourPane({ files, theme, actions }: ExtensionPaneProps): ReactNode {
         <box style={{ paddingLeft: 1 }}>
           <text content={tour.verdict.toUpperCase()} fg={verdictColor(tour.verdict, theme)} attributes={TextAttributes.BOLD} />
         </box>
+        <box style={{ paddingLeft: 1, paddingRight: 1 }}>
+          <text content={statusText(mailbox, stops.length, Date.now())} fg={theme.muted} wrapMode="word" />
+        </box>
         {tour.stack ? <StackBlock stack={tour.stack} theme={theme} /> : null}
         <box style={{ marginTop: 1, paddingLeft: 1, paddingRight: 1 }}>
           <BulletedText text={tour.summary} links={links} fg={theme.text} theme={theme} />
@@ -558,6 +581,7 @@ function TourPane({ files, theme, actions }: ExtensionPaneProps): ReactNode {
                   index={index}
                   current={index === current}
                   related={related.has(entry)}
+                  decision={decided.get(entry.number)}
                   links={links}
                   theme={theme}
                   onSelect={() => go({ kind: "goto", index })}
@@ -613,4 +637,10 @@ export default function registerGuidedReview(hunk: HunkExtensionAPI) {
   hunk.registerCommand({ id: "back", title: "Back to previous stop", key: "B" }, (ctx) =>
     apply(ctx, { kind: "back" }, describeBack),
   );
+
+  const access: TourAccess = {
+    currentStop: () => (state.cursor.current >= 0 ? state.stops[state.cursor.current]! : null),
+    stopCount: () => state.stops.length,
+  };
+  registerQa(hunk, access);
 }

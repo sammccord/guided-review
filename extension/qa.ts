@@ -1,13 +1,53 @@
 import { execFile } from "node:child_process";
 import { resolve } from "node:path";
-import type { ExtensionCliCommandContext, ExtensionCliCommandResult, ExtensionCliWriter } from "hunkdiff/extension";
-import { decisions, pending, postPlan, reviewEnd, transcript, type Mailbox, type PostPlan, type ReviewEnd } from "../core/src/index";
-import { answerPath, mailboxPaths, readMailbox, writeJsonAtomic, type MailboxPaths } from "../core/src/mailbox";
+import { useSyncExternalStore } from "react";
+import type {
+  ExtensionCliCommandContext,
+  ExtensionCliCommandResult,
+  ExtensionCliWriter,
+  ExtensionCommandContext,
+  ExtensionEventContext,
+  ExtensionReviewNote,
+  HunkExtensionAPI,
+} from "hunkdiff/extension";
+import {
+  classifyNote,
+  DECISIONS,
+  decisions,
+  emptyMailbox,
+  pending,
+  postPlan,
+  requestLabel,
+  reviewEnd,
+  statusText,
+  transcript,
+  type Anchor,
+  type Decision,
+  type Mailbox,
+  type PostPlan,
+  type Request,
+  type ReviewEnd,
+  type SessionRecord,
+  type StopRef,
+  type TourStop,
+} from "../core/src/index";
+import {
+  answerPath,
+  mailboxPaths,
+  nextSeq,
+  readMailbox,
+  requestPath,
+  writeJsonAtomic,
+  writeJsonAtomicSync,
+  type MailboxPaths,
+} from "../core/src/mailbox";
 
 const EXTENSION_DIR = resolve(import.meta.dir, "..");
 const WAIT_DEFAULT_SECONDS = 90;
 const ANSWERING_SECONDS = 600;
 const POLL_MS = 1000;
+const TUI_POLL_MS = 2000;
+const STATUS_ID = "qa";
 
 export const QA_USAGE = [
   "usage: hunk tour check|open <tour.json>",
@@ -208,4 +248,202 @@ export async function runAnswer(args: readonly string[], ctx: ExtensionCliComman
   await writeJsonAtomic(answerPath(paths, request.id), { id: request.id, commentId, text: parsed.text, at: now() });
   await writeLine(ctx.stdout, { id: request.id, status: "posted", commentId });
   return { kind: "exit", code: 0 };
+}
+
+interface QaState {
+  paths: MailboxPaths | null;
+  session: SessionRecord | null;
+  box: Mailbox;
+}
+
+let state: QaState = { paths: null, session: null, box: emptyMailbox() };
+const listeners = new Set<() => void>();
+
+function setState(next: QaState) {
+  state = next;
+  for (const listener of listeners) listener();
+}
+
+export function useMailbox(): Mailbox {
+  return useSyncExternalStore(
+    (listener) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    () => state.box,
+  );
+}
+
+export function decisionBadge(decision: Decision): string {
+  switch (decision) {
+    case "agree":
+      return "✓";
+    case "disagree":
+      return "✗";
+    case "unsure":
+      return "?";
+  }
+}
+
+/** Called from `tour open`, in the process that becomes the TUI, so `pid` is the TUI's own. */
+export async function openSession(input: { repo: string; tourPath: string; head: string }): Promise<void> {
+  const paths = mailboxPaths(input.tourPath);
+  const session: SessionRecord = { ...input, pid: process.pid, openedAt: now() };
+  await writeJsonAtomic(paths.session, session);
+  setState({ paths, session, box: await readMailbox(paths) });
+}
+
+async function writeSession(patch: Partial<SessionRecord>): Promise<void> {
+  if (!state.paths || !state.session) return;
+  const session = { ...state.session, ...patch };
+  setState({ ...state, session });
+  await writeJsonAtomic(state.paths.session, session);
+}
+
+function stopRef(entry: TourStop): StopRef {
+  const { number, stop } = entry;
+  return {
+    number,
+    ...(stop.id === undefined ? {} : { id: stop.id }),
+    title: stop.title,
+    ask: stop.ask,
+    anchor: { path: stop.path, side: stop.side, line: stop.line },
+  };
+}
+
+type RequestBody = Request extends infer R ? (R extends Request ? Omit<R, "id" | "seq" | "at"> : never) : never;
+
+async function writeRequest(paths: MailboxPaths, body: RequestBody): Promise<void> {
+  const box = await readMailbox(paths);
+  const seq = nextSeq(box);
+  const request = { id: `q-${seq}`, seq, at: now(), ...body } as Request;
+  await writeJsonAtomic(requestPath(paths, request.id), request);
+  setState({ ...state, box: { ...box, requests: [...box.requests, request] } });
+}
+
+export interface TourAccess {
+  currentStop(): TourStop | null;
+  stopCount(): number;
+}
+
+function currentStopRef(access: TourAccess): StopRef | null {
+  const current = access.currentStop();
+  return current ? stopRef(current) : null;
+}
+
+async function onNoteCreated(note: ExtensionReviewNote, access: TourAccess) {
+  const { paths } = state;
+  if (!paths || note.draft) return;
+  const kind = classifyNote(note, await readMailbox(paths));
+  if (!kind) return;
+  const anchor: Anchor = { path: note.filePath, side: note.side, line: note.line };
+  const stop = currentStopRef(access);
+  await writeRequest(
+    paths,
+    kind.kind === "question"
+      ? { kind: "question", noteId: note.id, anchor, text: kind.text, stop }
+      : { kind: "followup", noteId: note.id, parentId: kind.parentId, anchor, text: kind.text, stop },
+  );
+}
+
+function selectedAnchor(ctx: ExtensionCommandContext): Anchor | null {
+  const { file, currentLine } = ctx.selection;
+  return file && currentLine ? { path: file.path, side: currentLine.side, line: currentLine.line } : null;
+}
+
+const NO_TOUR = "No tour loaded. Start one with `hunk tour open <tour.json>`.";
+
+async function ask(ctx: ExtensionCommandContext, access: TourAccess) {
+  const { paths } = state;
+  if (!paths) {
+    ctx.notify(NO_TOUR, "warning");
+    return;
+  }
+  const stop = currentStopRef(access);
+  const anchor = selectedAnchor(ctx) ?? stop?.anchor ?? null;
+  if (!anchor) {
+    ctx.notify("Move to a line first", "warning");
+    return;
+  }
+  const text = await ctx.dialogs.input({ title: "Ask the agent", placeholder: "Your question" });
+  if (text === null || text.trim() === "") return;
+  await writeRequest(paths, { kind: "ask", anchor, text: text.trim(), stop });
+  ctx.notify("Question sent to the agent");
+}
+
+async function decide(ctx: ExtensionCommandContext, access: TourAccess) {
+  const { paths } = state;
+  if (!paths) {
+    ctx.notify(NO_TOUR, "warning");
+    return;
+  }
+  const stop = currentStopRef(access);
+  if (!stop) {
+    ctx.notify("No current stop. Press > to start the tour.");
+    return;
+  }
+  const picked = await ctx.dialogs.select({ title: `Stop ${stop.number}: ${stop.ask}`, options: DECISIONS });
+  const decision = DECISIONS.find((candidate) => candidate === picked);
+  if (!decision) return;
+  const comment = await ctx.dialogs.input({ title: "Comment (Enter to skip)" });
+  if (comment === null) return;
+  await writeRequest(paths, { kind: "decision", stop, decision, comment: comment.trim() });
+  ctx.notify(`Stop ${stop.number}: ${decision}`);
+}
+
+async function finish(ctx: ExtensionCommandContext) {
+  if (!state.session) {
+    ctx.notify(NO_TOUR, "warning");
+    return;
+  }
+  await writeSession({ finishedAt: now() });
+  ctx.notify("Review finished. The agent will draft the review from your decisions.");
+}
+
+function close() {
+  if (!state.paths || !state.session) return;
+  writeJsonAtomicSync(state.paths.session, { ...state.session, closedAt: now() });
+}
+
+let poller: ReturnType<typeof setInterval> | null = null;
+// Event controls expire on reload, so the poller reads the latest ctx instead of capturing one.
+let host: ExtensionEventContext | null = null;
+let seenAnswers: Set<string> | null = null;
+
+async function poll(access: TourAccess) {
+  const { paths } = state;
+  if (!paths || !host) return;
+  const box = await readMailbox(paths);
+  setState({ ...state, box });
+  // Hunk 0.22 hosts have no status line; the Tour pane shows the same text there.
+  (host as Partial<ExtensionEventContext>).statusLine?.set({
+    id: STATUS_ID,
+    spans: [{ text: statusText(box, access.stopCount(), Date.now()), tone: "muted" }],
+  });
+  if (seenAnswers) {
+    for (const request of box.requests) {
+      if (box.answers.has(request.id) && !seenAnswers.has(request.id)) host.notify(`Answered: ${requestLabel(request)}`);
+    }
+  }
+  seenAnswers = new Set(box.answers.keys());
+}
+
+function startPolling(ctx: ExtensionEventContext, access: TourAccess) {
+  host = ctx;
+  if (poller || !state.paths) return;
+  poller = setInterval(() => void poll(access), TUI_POLL_MS);
+  void poll(access);
+}
+
+export function registerQa(hunk: HunkExtensionAPI, access: TourAccess) {
+  hunk.on("changeset_loaded", (_payload, ctx) => startPolling(ctx, access));
+  hunk.on("session_reload", (_payload, ctx) => startPolling(ctx, access));
+  hunk.on("note_created", ({ note }) => onNoteCreated(note, access));
+  hunk.on("shutdown", () => {
+    if (poller) clearInterval(poller);
+    close();
+  });
+  hunk.registerCommand({ id: "ask", title: "Ask the agent", key: "Q" }, (ctx) => ask(ctx, access));
+  hunk.registerCommand({ id: "decide", title: "Decide this stop", key: "V" }, (ctx) => decide(ctx, access));
+  hunk.registerCommand({ id: "finish", title: "Finish review" }, finish);
 }
