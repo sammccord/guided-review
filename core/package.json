@@ -4,6 +4,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./git": "./src/git.ts"
+    "./git": "./src/git.ts",
+    "./mailbox": "./src/mailbox.ts"
   }
 }

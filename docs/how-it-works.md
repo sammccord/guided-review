@@ -28,6 +28,25 @@ From there Hunk shows an ordinary diff review, with three additions from the ext
 
 The whole diff stays visible. A tour orders your attention but does not hide anything, and you can leave it at any point to read a file the agent skipped.
 
+## Asking the agent from inside Hunk
+
+The agent that wrote the tour holds the whole audit in its context. The reviewer can use that without leaving Hunk. Every note the reviewer adds is a question. A reply under one of the agent's answers is a follow-up. `Q` sends a question. `V` sends a decision on the current stop: `agree`, `disagree`, or `unsure` with an optional comment. The agent answers inline as threaded notes through `hunk session comment add`, and uses the decisions to draft the review at the end.
+
+The two sides never share a process, so they talk through files. The mailbox is a directory beside the tour, `<tour>.tour.qa/`:
+
+| Path | Writer | Content |
+| --- | --- | --- |
+| `session.json` | the extension in Hunk | repo, tour path, head, the Hunk process id, `openedAt`, and `finishedAt` or `closedAt` once set |
+| `inbox/q-<seq>.json` | the extension in Hunk | one request, never changed after it is written |
+| `answered/q-<seq>.json` | `hunk tour answer` | the request id, the Hunk comment id, the answer text, and the time |
+| `agent.json` | `hunk tour wait` | the agent's process id and how long it promised to listen |
+
+Each path has one writer, so there are no locks. Every write goes to a temp file first and is renamed into place, and readers skip files that do not parse. Everything shown to either side is a projection of these files. That covers the pending list the agent sees, the status text and decision badges the reviewer sees, and the transcript in the final payload. The model and its projections live in [`core/src/qa.ts`](../core/src/qa.ts), the file layout in [`core/src/mailbox.ts`](../core/src/mailbox.ts), and the Hunk wiring in [`extension/qa.ts`](../extension/qa.ts).
+
+The agent's loop is two commands. `hunk tour wait <tour.json>... [--timeout <seconds>]` writes its heartbeat, polls the mailbox once a second, and prints one JSON line. It is `pending` with the requests, `idle` after the timeout, or `finished` or `closed` with the decisions and the transcript. `hunk tour answer <tour.json> <id> --text <answer>` posts the note, then records the answer. A crash between those two steps can post the same answer twice on retry. That window is a few milliseconds and the cost is a duplicate note, so delivery is at least once and nothing is lost. A request that is already answered is reported as such and not posted again.
+
+`wait` treats the review as over when `session.json` carries `finishedAt`, set by **Finish review**, or `closedAt`, set when Hunk shuts down, or when the Hunk process id is no longer alive. Reopening the tour writes a fresh `session.json` and keeps the inbox and answers, so decisions survive a restart and badges come back. An `agree` with no comment needs no reply and is never sent to the agent. Hunk 0.22 has no extension status line, so the status text sits at the top of the **Tour** pane; on hosts that have one, it is also set there.
+
 ## Why a tour instead of GitHub review comments
 
 The skill's description says it is not for posting review comments to GitHub. That is a deliberate choice, not a missing feature.
@@ -75,8 +94,8 @@ The renderer owns everything else: how a stop is revealed, how messages appear, 
 ## Known limits
 
 - **Hunk's extension API is experimental.** `package.json` declares `apiVersion: 25`, and Hunk's own README warns that the API may break between minor releases. The extension was built against Hunk 0.22.0 and the `hunkdiff` 0.23.0 types. On Hunk releases before API 26, the extension cannot tell which files the file filter hides, so a stop in a filtered-out file triggers Hunk's own warning when revealed.
-- **Inline tour notes are read-only.** They come from a sidecar file, so you cannot reply to them, resolve them, or edit them in Hunk. Notes you add with `c` are Hunk's own and never flow back into the tour or to GitHub.
-- **The tour lives in memory.** Quitting Hunk forgets your position. Reopening the tour starts before stop 1.
+- **Inline tour notes are read-only.** They come from a sidecar file, so you cannot reply to them, resolve them, or edit them in Hunk. Notes you add with `c` never flow to GitHub. While a tour is open, every note goes to the agent, and its answer arrives as a reply under the note.
+- **The tour lives in memory.** Quitting Hunk forgets your position. Reopening the tour starts before stop 1. Decisions and questions are files beside the tour and survive a restart.
 - **Anchors must sit inside the diff.** A stop can only point at lines inside a hunk of `base...head`, context lines included. An unchanged caller in another file cannot be a stop, so the agent cites it in the stop's body instead.
 - **GitHub Enterprise works through `gh`, not `hunk gh`.** `prepare.py` calls `gh pr view` and `gh api --hostname <host>`, so any host `gh` is logged in to works. Stack detection also needs the host to offer the stacks API. Without it, `stackLookup` is `unavailable` and each PR is reviewed alone.
 - **Terminal launch is best effort.** `open-tour.sh` tries Neovim first, then herdr, tmux, or zellij, then kitty, WezTerm, Ghostty, Alacritty, iTerm2, Konsole, GNOME Terminal, or foot. It falls back to Terminal.app on macOS or x-terminal-emulator on Linux with a graphical display. If no launcher applies, it prints the command for you to run.
