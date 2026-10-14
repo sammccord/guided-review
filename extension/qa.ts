@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import type {
   ExtensionCliCommandContext,
   ExtensionCliCommandResult,
@@ -21,6 +21,8 @@ import {
   ownsSession,
   parseTour,
   pending,
+  placeholderDiff,
+  placeholderPlan,
   postPlan,
   requestLabel,
   reviewEnd,
@@ -359,6 +361,50 @@ function commentIdOf(output: string): string | null {
   }
 }
 
+const placeholders = new Map<string, string>();
+const placing = new Set<string>();
+const repliedTo = new Set<string>();
+let ownId: string | null = null;
+let syncing: Promise<void> | null = null;
+let placeholderBox: Mailbox | null = null;
+
+async function ownSessionId(): Promise<string | null> {
+  ownId ??= sessionIdForPid(JSON.parse(await runHunk(["session", "list", "--json"])), process.pid);
+  return ownId;
+}
+
+async function syncPlaceholders(box: Mailbox): Promise<void> {
+  placeholderBox = box;
+  if (syncing) return syncing;
+  syncing = (async () => {
+    while (placeholderBox) {
+      const current = placeholderBox;
+      placeholderBox = null;
+      let sessionId: string | null;
+      try {
+        sessionId = await ownSessionId();
+      } catch {
+        continue;
+      }
+      if (!sessionId) continue;
+      const waiting = reviewEnd(current, pidAlive) ? [] : pending(current);
+      const diff = placeholderDiff(waiting, placeholders, placing);
+      for (const request of diff.create) {
+        placing.add(request.id);
+        const id = await runHunk(sessionAddArgs(placeholderPlan(request), sessionId)).then(commentIdOf, () => null);
+        placing.delete(request.id);
+        if (id !== null) placeholders.set(request.id, id);
+      }
+      for (const id of diff.remove) {
+        const commentId = placeholders.get(id)!;
+        placeholders.delete(id);
+        if (!repliedTo.has(commentId)) await runHunk(["session", "comment", "rm", sessionId, commentId, "--json"]).catch(() => null);
+      }
+    }
+  })().finally(() => { syncing = null; });
+  return syncing;
+}
+
 function parseAnswerArgs(args: readonly string[], cwd: string): { tour: string; id: string; text: string } | string {
   const [tour, id, flag, text, ...extra] = args;
   if (!tour || !id || flag !== "--text" || text === undefined || extra.length > 0) return QA_USAGE.join("\n");
@@ -453,6 +499,23 @@ export function useMailbox(): Mailbox {
   );
 }
 
+export function useWaiting(): Request[] {
+  const box = useMailbox();
+  return reviewEnd(box, pidAlive) ? [] : pending(box);
+}
+
+export const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
+export function useSpinnerFrame(active: boolean): string {
+  const [index, setIndex] = useState(0);
+  useEffect(() => {
+    if (!active) return;
+    const timer = setInterval(() => setIndex((value) => (value + 1) % SPINNER_FRAMES.length), 120);
+    return () => clearInterval(timer);
+  }, [active]);
+  return active ? SPINNER_FRAMES[index]! : "";
+}
+
 export function decisionBadge(decision: Decision): string {
   switch (decision) {
     case "agree":
@@ -511,6 +574,7 @@ async function writeRequest(paths: MailboxPaths, body: RequestBody): Promise<voi
   const request = { id: `q-${seq}`, seq, at: now(), ...body } as Request;
   await writeJsonAtomic(requestPath(paths, request.id), request);
   setState({ ...state, box: { ...box, requests: [...box.requests, request] } });
+  void syncPlaceholders(state.box);
 }
 
 export async function requestComment(entry: TourStop): Promise<void> {
@@ -531,7 +595,9 @@ function currentStopRef(access: TourAccess): StopRef | null {
 async function onNoteCreated(note: ExtensionReviewNote, ctx: ExtensionEventContext, access: TourAccess) {
   const { paths } = state;
   if (!paths || note.draft) return;
-  const kind = classifyNote(note, await readMailbox(paths));
+  const placeholderIds = new Set(placeholders.values());
+  if (note.parentId !== undefined && placeholderIds.has(note.parentId)) repliedTo.add(note.parentId);
+  const kind = classifyNote(note, await readMailbox(paths), placeholderIds);
   if (!kind) return;
   const anchor: Anchor = { path: note.filePath, side: note.side, line: note.line };
   const stop = currentStopRef(access);
@@ -613,6 +679,11 @@ async function finish(ctx: ExtensionCommandContext, access: TourAccess) {
     if (!confirmed) return;
   }
   await writeSession({ finishedAt: now() });
+  if (state.paths) {
+    const box = await readMailbox(state.paths);
+    setState({ ...state, box });
+    await syncPlaceholders(box);
+  }
   ctx.notify("Review finished. The agent will draft the review from your decisions.");
 }
 
@@ -643,6 +714,7 @@ async function poll(access: TourAccess) {
     }
   }
   seenAnswers = new Set(box.answers.keys());
+  void syncPlaceholders(box);
 }
 
 function startPolling(ctx: ExtensionEventContext, access: TourAccess) {

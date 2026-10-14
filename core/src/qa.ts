@@ -200,10 +200,16 @@ function threadIds(box: Mailbox): Set<string> {
   return ids;
 }
 
-export function classifyNote(note: { id: string; parentId?: string; body: string }, box: Mailbox): NoteClass {
+export function classifyNote(
+  note: { id: string; parentId?: string; body: string },
+  box: Mailbox,
+  extraThreadIds: ReadonlySet<string> = new Set(),
+): NoteClass {
   const text = note.body.trim();
   if (text === "") return null;
-  if (note.parentId !== undefined && threadIds(box).has(note.parentId)) return { kind: "followup", parentId: note.parentId, text };
+  if (note.parentId !== undefined && (threadIds(box).has(note.parentId) || extraThreadIds.has(note.parentId))) {
+    return { kind: "followup", parentId: note.parentId, text };
+  }
   return { kind: "question", text };
 }
 
@@ -341,6 +347,29 @@ export function postPlan(request: Request, text: string): PostPlan {
     case "comment":
       return { kind: "anchored", anchor: request.stop.anchor, summary: truncate(`Posted to PR: ${request.stop.title}`), rationale: text };
   }
+}
+
+export const PLACEHOLDER_TEXT = "⋯ Waiting for the agent";
+
+export function placeholderPlan(request: Request): PostPlan {
+  return { ...postPlan(request, ""), summary: PLACEHOLDER_TEXT, rationale: "" };
+}
+
+export interface PlaceholderDiff {
+  create: Request[];
+  remove: string[];
+}
+
+export function placeholderDiff(
+  waiting: readonly Request[],
+  posted: ReadonlyMap<string, string>,
+  inFlight: ReadonlySet<string>,
+): PlaceholderDiff {
+  const ids = new Set<string>(waiting.map((request) => request.id));
+  return {
+    create: waiting.filter((request) => !posted.has(request.id) && !inFlight.has(request.id)),
+    remove: [...posted.keys()].filter((id) => !ids.has(id)),
+  };
 }
 
 export function requestLabel(request: Request): string {

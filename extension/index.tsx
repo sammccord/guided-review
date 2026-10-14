@@ -42,7 +42,7 @@ import {
   type Verdict,
 } from "../core/src/index";
 import { readDiffRanges } from "../core/src/git";
-import { decisionBadge, openSession, qaHint, QA_KEYS, QA_USAGE, registerQa, requestComment, requestDecision, runAnswer, runApprove, runWait, useMailbox, type TourAccess } from "./qa";
+import { decisionBadge, openSession, qaHint, QA_KEYS, QA_USAGE, registerQa, requestComment, requestDecision, runAnswer, runApprove, runWait, useMailbox, useSpinnerFrame, useWaiting, type TourAccess } from "./qa";
 import { toSidecar } from "./sidecar";
 
 const PANE_ID = "tour";
@@ -392,6 +392,7 @@ function StopRow({
   current,
   related,
   decision,
+  waiting,
   comment,
   links,
   theme,
@@ -408,6 +409,7 @@ function StopRow({
   /** Links to or from the current stop. */
   related: boolean;
   decision: Decision | undefined;
+  waiting: string;
   comment: CommentStatus;
   links: StopIndex;
   theme: ExtensionPaneTheme;
@@ -425,6 +427,7 @@ function StopRow({
           <span fg={theme.text}>{`${current ? "▸" : " "}${index + 1}. `}</span>
           {related ? <span fg={theme.accent}>{"↔ "}</span> : null}
           <span fg={kindColor(stop.kind, theme)}>{`[${stop.kind}] `}</span>
+          {waiting ? <span fg={theme.accent}>{`${waiting} `}</span> : null}
           {decision ? <span fg={decisionColor(decision, theme)}>{`${decisionBadge(decision)} `}</span> : null}
           <span fg={theme.text}>{stop.title}</span>
         </text>
@@ -544,6 +547,9 @@ function StackBlock({ stack, theme }: { stack: TourStack; theme: ExtensionPaneTh
 function TourPane({ files, theme, actions, keybindings }: ExtensionPaneProps): ReactNode {
   const { tour, stops, links, cursor } = useTourState();
   const mailbox = useMailbox();
+  const waiting = useWaiting();
+  const waitingStops = new Set(waiting.flatMap((request) => request.stop ? [request.stop.number] : []));
+  const frame = useSpinnerFrame(waiting.length > 0);
   const decided = decisions(mailbox);
   const { current } = cursor;
   const scrollRef = useRef<ScrollBoxRenderable | null>(null);
@@ -589,7 +595,7 @@ function TourPane({ files, theme, actions, keybindings }: ExtensionPaneProps): R
           <text content={tour.verdict.toUpperCase()} fg={verdictColor(tour.verdict, theme)} attributes={TextAttributes.BOLD} />
         </box>
         <box style={{ paddingLeft: 1, paddingRight: 1 }}>
-          <text content={statusText(mailbox, stops.length, Date.now())} fg={theme.muted} wrapMode="word" />
+          <text content={`${frame ? `${frame} ` : ""}${statusText(mailbox, stops.length, Date.now())}`} fg={theme.muted} wrapMode="word" />
         </box>
         {tour.stack ? <StackBlock stack={tour.stack} theme={theme} /> : null}
         <box style={{ marginTop: 1, paddingLeft: 1, paddingRight: 1 }}>
@@ -620,6 +626,7 @@ function TourPane({ files, theme, actions, keybindings }: ExtensionPaneProps): R
                   current={index === current}
                   related={related.has(entry)}
                   decision={decided.get(entry.number)}
+                  waiting={waitingStops.has(entry.number) ? frame : ""}
                   comment={commentStatus(mailbox, entry.number)}
                   links={links}
                   theme={theme}

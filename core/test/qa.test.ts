@@ -13,6 +13,9 @@ import {
   parseRequest,
   parseSession,
   pending,
+  PLACEHOLDER_TEXT,
+  placeholderDiff,
+  placeholderPlan,
   postPlan,
   requestLabel,
   reviewEnd,
@@ -145,6 +148,35 @@ describe("classifyNote", () => {
     });
     expect(classifyNote({ id: "user:6", parentId: "user:1", body: "more" }, box)).toEqual({ kind: "followup", parentId: "user:1", text: "more" });
     expect(classifyNote({ id: "user:6", parentId: "user:77", body: "outside a thread" }, box)).toEqual({ kind: "question", text: "outside a thread" });
+  });
+});
+
+test("placeholder replies extend existing Q&A threads", () => {
+  const box = mailbox([samples.question(1)], [answer("q-1", "mcp:9")]);
+  const extra = new Set(["placeholder:1"]);
+  for (const parentId of ["placeholder:1", "mcp:9", "user:1"]) {
+    expect(classifyNote({ id: "user:7", parentId, body: "  more  " }, box, extra))
+      .toEqual({ kind: "followup", parentId, text: "more" });
+  }
+  expect(classifyNote({ id: "user:7", parentId: "other", body: "more" }, box, extra)).toEqual({ kind: "question", text: "more" });
+  expect(classifyNote({ id: "user:7", parentId: "placeholder:1", body: " " }, box, extra)).toBeNull();
+});
+
+describe("placeholders", () => {
+  test.each(["question", "followup", "ask", "decision", "comment"] as const)("%s uses the answer target with static text", (kind) => {
+    const item = samples[kind](1);
+    expect(placeholderPlan(item)).toEqual({ ...postPlan(item, "answer"), summary: PLACEHOLDER_TEXT, rationale: "" });
+  });
+
+  test("diff creates only unposted requests not in flight and removes answered requests", () => {
+    const waiting = [samples.ask(1), samples.question(2), samples.followup(3), samples.comment(4)];
+    const posted = new Map([["q-1", "mcp:1"], ["q-5", "mcp:5"]]);
+    const inFlight = new Set(["q-2", "q-5"]);
+    expect(placeholderDiff(waiting, posted, inFlight)).toEqual({ create: waiting.slice(2), remove: ["q-5"] });
+    expect(placeholderDiff([], posted, inFlight)).toEqual({ create: [], remove: ["q-1", "q-5"] });
+    expect(placeholderDiff(waiting, new Map(), new Set())).toEqual({ create: waiting, remove: [] });
+    expect([...posted]).toEqual([["q-1", "mcp:1"], ["q-5", "mcp:5"]]);
+    expect([...inFlight]).toEqual(["q-2", "q-5"]);
   });
 });
 

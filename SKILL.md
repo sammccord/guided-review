@@ -135,6 +135,8 @@ The muted hint below **Ask:** lists the current keys for decide, ask, and finish
 
 ## 9. Answer the reviewer
 
+Hunk shows a "Waiting for the agent" placeholder under each unanswered request and a spinner in the Tour pane, and removes the placeholder once answered.
+
 The reviewer talks to you from Hunk while the tour is open. Five things become requests. Every note is a question. A reply under one of your answers is a follow-up. `Q` sends a question. `V` sends a decision on a stop: `agree`, `disagree`, or `unsure`, plus an optional comment. **Post to PR** sends a `comment` request for that stop. Run from the worktree, with every open tour of a stack at once:
 
 ```bash
