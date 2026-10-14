@@ -32,6 +32,8 @@ The whole diff stays visible. A tour orders your attention but does not hide any
 
 The agent that wrote the tour holds the whole audit in its context. The reviewer can use that without leaving Hunk. Every note the reviewer adds is a question. A reply under one of the agent's answers is a follow-up. `Q` sends a question. `V` sends a decision on the current stop: `agree`, `disagree`, or `unsure` with an optional comment. The agent answers inline as threaded notes through `hunk session comment add`, and uses the decisions to draft the review at the end.
 
+The current stop shows a muted key hint below **Ask:** and a **Decide** button beside **Post to PR**. The hint follows rebound keys and omits unbound commands. `F` finishes the review and asks for confirmation if stops remain undecided. At the last stop, `>` points to the finish key.
+
 The two sides never share a process, so they talk through files. The mailbox is a directory beside the tour, `<tour>.tour.qa/`:
 
 | Path | Writer | Content |
@@ -40,10 +42,11 @@ The two sides never share a process, so they talk through files. The mailbox is 
 | `inbox/q-<seq>.json` | the extension in Hunk | one request, never changed after it is written |
 | `answered/q-<seq>.json` | `hunk tour answer` | the request id, the Hunk comment id, the answer text, and the time |
 | `agent.json` | `hunk tour wait` | the agent's process id and how long it promised to listen |
+| `approved.json` | `hunk tour approve` | approval URL, reviewed head, and time; prevents duplicate approval at that head |
 
 Each path has one writer, so there are no locks. Every write goes to a temp file first and is renamed into place, and readers skip files that do not parse. Everything shown to either side is a projection of these files. That covers the pending list the agent sees, the status text and decision badges the reviewer sees, and the transcript in the final payload. The model and its projections live in [`core/src/qa.ts`](../core/src/qa.ts), the file layout in [`core/src/mailbox.ts`](../core/src/mailbox.ts), and the Hunk wiring in [`extension/qa.ts`](../extension/qa.ts).
 
-The agent's loop is two commands. `hunk tour wait <tour.json>... [--timeout <seconds>]` writes its heartbeat, polls the mailbox once a second, and prints one JSON line. It is `pending` with the requests, `idle` after the timeout, or `finished` or `closed` with the decisions and the transcript. `hunk tour answer <tour.json> <id> --text <answer>` posts the note, then records the answer. A crash between those two steps can post the same answer twice on retry. That window is a few milliseconds and the cost is a duplicate note, so delivery is at least once and nothing is lost. A request that is already answered is reported as such and not posted again.
+The agent's loop is two commands. `hunk tour wait <tour.json>... [--timeout <seconds>]` writes its heartbeat, polls the mailbox once a second, and prints one JSON line. It is `pending` with the requests, `idle` after the timeout, or `finished` or `closed` with the decisions, transcript, and approval eligibility and blockers per tour. `hunk tour answer <tour.json> <id> --text <answer>` posts the note, then records the answer. A crash between those two steps can post the same answer twice on retry. That window is a few milliseconds and the cost is a duplicate note, so delivery is at least once and nothing is lost. A request that is already answered is reported as such and not posted again.
 
 `wait` treats the review as over when `session.json` carries `finishedAt`, set by **Finish review**, or `closedAt`, set when Hunk shuts down, or when the Hunk process id is no longer alive. Reopening the tour writes a fresh `session.json` and keeps the inbox and answers, so decisions survive a restart and badges come back. An `agree` with no comment needs no reply and is never sent to the agent. Hunk 0.22 has no extension status line, so the status text sits at the top of the **Tour** pane; on hosts that have one, it is also set there.
 
@@ -55,7 +58,10 @@ A review comment speaks to the author, in public, and stays on the PR. An agent'
 
 A tour speaks to the reviewer, in private, and goes away when you close Hunk. You read each stop, make the call the ask names, and write the comments you agree with yourself, with `c` in Hunk or on GitHub. The agent does the reading. The human keeps the judgment and the voice.
 
-**Post to PR** is the one exception, triggered only by the reviewer's click on a stop. The agent rewords that stop as feedback for the author. `tour answer` posts it through `gh api` at the tour's `head`, then adds a Hunk note with the GitHub link. A stop anchored outside the PR's diff, or a tour without a PR `url`, fails loudly. A failure after GitHub accepts the comment but before the answer is recorded can duplicate the PR comment on retry.
+Two exceptions require the reviewer's action:
+
+- **Post to PR** starts with a click on a stop. The agent rewords that stop as feedback for the author. `tour answer` posts it through `gh api` at the tour's `head`, then adds a Hunk note with the GitHub link. A stop anchored outside the PR's diff, or a tour without a PR `url`, fails loudly. A failure after GitHub accepts the comment but before the answer is recorded can duplicate the PR comment on retry.
+- **Approval** requires an explicit yes in the agent chat after the review draft. The agent asks only when the tour is eligible and the transcript has no unresolved concerns. `tour approve <tour.json> [--body <text>]` requires an ended review, an `approve` verdict, and every stop agreed. It checks the PR head against the session head and submits approval pinned to that commit. A moved head requires a fresh review. The CLI checks both `approved.json` and the current user's GitHub reviews to avoid duplicate approval on retry. Each stack layer needs its own confirmation and approval.
 
 ## Why stops are small, and why tracks and links exist
 

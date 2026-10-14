@@ -143,7 +143,7 @@ These keys work while a tour is open in Hunk:
 | `V` | Decide the current stop as agree, disagree, or unsure, with an optional comment | guided-review |
 | `Q` | Ask the agent a question about the current line | guided-review |
 | none | **Restart tour**, from the **Extensions** menu | guided-review |
-| none | **Finish review**, from the **Extensions** menu. Tells the agent to draft the review from your decisions | guided-review |
+| `F` | **Finish review**. Confirms if stops remain undecided, then asks the agent to draft the review | guided-review |
 | `{` `}` | Previous or next annotated hunk | Hunk |
 | `a` | Show or hide the inline tour notes | Hunk |
 | `c` | Add a review note. The agent answers every note | Hunk |
@@ -154,7 +154,7 @@ Clicking a stop in the **Tour** pane jumps to it. Clicking a link row follows th
 
 ## Talk to the agent from Hunk
 
-While the tour is open, the agent that wrote it waits for you. `V` records your decision on a stop. `Q` asks about the current line. `c` adds a note, and every note goes to the agent. A reply under one of the agent's answers is a follow-up. Answers appear as threaded notes in the diff. The **Tour** pane shows how many stops you have decided, how many questions wait, and whether the agent is listening. Each decided stop gets a badge. `✓` is agree, `✗` is disagree, and `?` is unsure. When you are done, choose **Finish review** in the **Extensions** menu or quit Hunk. The agent then drafts the review from your decisions and the conversation.
+While the tour is open, the agent that wrote it waits for you. `V` records your decision on a stop. **Decide** beside **Post to PR** does the same and shows the latest decision. The muted hint below **Ask:** lists the current decide, ask, and finish keys. `Q` asks about the current line. `c` adds a note, and every note goes to the agent. A reply under one of the agent's answers is a follow-up. Answers appear as threaded notes in the diff. The **Tour** pane shows how many stops you have decided, how many questions wait, and whether the agent is listening. Each decided stop gets a badge. `✓` is agree, `✗` is disagree, and `?` is unsure. Press `F` to finish, or quit Hunk. Finish asks for confirmation if stops remain undecided. The agent then drafts the review from your decisions and the conversation.
 
 Requests and answers are JSON files in a `.tour.qa` directory beside the tour file. The review's `cleanup` command removes it.
 

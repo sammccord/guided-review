@@ -1,3 +1,5 @@
+import type { Verdict } from "./schema";
+
 export type Side = "new" | "old";
 
 export interface Anchor {
@@ -223,6 +225,21 @@ export function decisions(box: Mailbox): Map<number, Decision> {
 }
 
 export type CommentStatus = "none" | "pending" | "posted";
+
+export function approvalBlockers(verdict: Verdict, stopCount: number, box: Mailbox): string[] {
+  const blockers: string[] = [];
+  if (verdict !== "approve") blockers.push(`verdict is ${verdict}`);
+  const latest = decisions(box);
+  for (const [stop, decision] of latest) {
+    if (decision !== "agree") blockers.push(`stop ${stop}: ${decision}`);
+  }
+  let undecided = 0;
+  for (let stop = 1; stop <= stopCount; stop++) {
+    if (!latest.has(stop)) undecided++;
+  }
+  if (undecided > 0) blockers.push(`${undecided} of ${stopCount} stops undecided`);
+  return blockers;
+}
 
 export function commentStatus(box: Mailbox, stopNumber: number): CommentStatus {
   const comments = box.requests.filter((request) => request.kind === "comment" && request.stop.number === stopNumber);
