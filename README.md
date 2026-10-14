@@ -102,7 +102,7 @@ The same stops also appear in the diff as inline tour notes:
 	~/.agents/skills/guided-review/examples/demo/run.sh
 	```
 
-	The script opens Hunk in a new terminal tab or window, because Hunk needs a real terminal. Inside [herdr](https://herdr.dev), a terminal workspace manager, it opens a herdr tab. Inside tmux it opens a tmux window. Otherwise, on macOS, it opens an iTerm2 or Terminal.app window. With none of those, it prints the command. To print the command and run it yourself instead, add `--print --keep`.
+	The script opens Hunk in a new terminal tab or window, because Hunk needs a real terminal. Inside a Neovim terminal it opens a Neovim tab. Inside [herdr](https://herdr.dev), tmux, or zellij it opens a tab or window there, with a pane fallback for older zellij versions. Inside kitty, WezTerm, Ghostty, Alacritty, Konsole, GNOME Terminal, or foot it opens a tab or window in that terminal. Otherwise it uses iTerm2 when running there or Terminal.app on macOS, and x-terminal-emulator on Linux with a graphical display. With none of those, it prints the command. To print the command and run it yourself instead, add `--print --keep`.
 
 3. Ask your agent for a review:
 

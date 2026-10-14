@@ -4,6 +4,10 @@ This file lists all notable changes to this project. The format follows [Keep a 
 
 ## Unreleased
 
+### Added
+
+- Tour launch support for Neovim terminals, zellij, kitty, WezTerm, Ghostty, Alacritty, Konsole, GNOME Terminal, foot, and Linux's x-terminal-emulator.
+
 ### Changed
 
 - The README and install guide lead with `npx skills add sammccord/guided-review -g`, which installs the skill without a clone. The clone and `scripts/install.sh` route remains for contributors.

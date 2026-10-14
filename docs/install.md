@@ -219,7 +219,9 @@ Install `gh`. Without it, `prepare.py` can review a branch but not a PR URL or P
 
 ### Hunk does not open
 
-Hunk needs a real terminal. When an agent runs `scripts/open-tour.sh`, the script opens a new terminal tab or window for Hunk. Inside [herdr](https://herdr.dev), a terminal workspace manager, it opens a herdr tab. Inside tmux it opens a tmux window. Otherwise, on macOS, it opens an iTerm2 or Terminal.app window. If none of those applies, it prints `No terminal launcher found; run the command below yourself.` Copy the `Tour command:` line it prints and run it in a terminal.
+Hunk needs a real terminal. When an agent runs `scripts/open-tour.sh`, the script opens a new terminal tab or window for Hunk. Inside a Neovim terminal it opens a Neovim tab. Inside [herdr](https://herdr.dev), tmux, or zellij it opens a tab or window there, with a pane fallback for older zellij versions. Inside kitty, WezTerm, Ghostty, Alacritty, Konsole, GNOME Terminal, or foot it opens a tab or window in that terminal. Otherwise it uses iTerm2 when running there or Terminal.app on macOS, and x-terminal-emulator on Linux with a graphical display. If none of those applies, it prints `No terminal launcher found; run the command below yourself.` Copy the `Tour command:` line it prints and run it in a terminal.
+
+kitty needs `allow_remote_control` enabled for the script to open a tab. If remote control is disabled, the script tries the next launcher.
 
 ### The **Tour** pane is missing
 
