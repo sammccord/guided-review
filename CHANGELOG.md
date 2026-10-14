@@ -6,6 +6,7 @@ This file lists all notable changes to this project. The format follows [Keep a 
 
 ### Added
 
+- **Post to PR** on the current tour stop. The agent rewords the chosen stop for the author, posts a PR line comment through `gh api`, and confirms in Hunk with the link. Requires the tour's PR `url`.
 - Reviewer to agent Q&A inside Hunk. `V` records a decision on the current stop: agree, disagree, or unsure, with an optional comment. `Q` asks a question about the current line. Every note added with `c` goes to the agent too, and the agent replies under it. Each decided stop shows a badge in the **Tour** pane, which also shows how many questions wait and whether the agent is listening. **Finish review** in the **Extensions** menu ends the review.
 - `hunk tour wait` and `hunk tour answer`, the agent's side of the Q&A. `wait` blocks until a request arrives, the timeout passes, or the review ends, and prints one JSON line. `answer` posts the reply as a threaded Hunk note and records it. Requests and answers are files in a `.tour.qa` directory beside the tour, with one writer per path.
 - `SKILL.md` step 9, "Answer the reviewer", and a review draft from the decisions in the report.

@@ -1,6 +1,6 @@
 ---
 name: guided-review
-description: Audit a pull request, a stack of pull requests, or a branch, pick the changes that need human judgment, and open them as ordered, annotated tours of small stops grouped into tracks in the Hunk diff viewer, one tour per stack layer. Use for "guided review", "tour this PR", "review tour", "walk me through this PR", or a PR link or branch name with a request to review it in hunk. Not for posting review comments to GitHub.
+description: Audit a pull request, a stack of pull requests, or a branch, pick the changes that need human judgment, and open them as ordered, annotated tours of small stops grouped into tracks in the Hunk diff viewer, one tour per stack layer. Use for "guided review", "tour this PR", "review tour", "walk me through this PR", or a PR link or branch name with a request to review it in hunk. Posts to GitHub only the stops the reviewer chooses with Post to PR.
 ---
 
 # Guided review
@@ -95,6 +95,7 @@ Order tracks so each one only depends on tracks before it: the core abstraction 
 Write the tour to `tourPath` from step 1. It sits beside the worktree, not inside it. The schema is the `Tour`, `Track`, and `Stop` types in [`core/src/schema.ts`](core/src/schema.ts). Read them before writing.
 
 - `base` and `head` are the SHAs from step 1.
+- `url` is the review entry's `url` from step 1. It is needed for **Post to PR**.
 - `stack` is the review entry's `stack` from step 1, copied as is. Omit it when it is `null`.
 - Anchor each stop on lines of the reviewed diff. Use `side: "new"` with new-file line numbers, or `side: "old"` for code that was deleted. `endLine` covers a short range that stays inside one `@@` range of `git diff <base>...<head>`. Adjacent changed lines can belong to different `@@` ranges.
 - Write `body`, the tour `summary`, and track summaries as short bullet points, one fact per line, each line starting with `- `. No paragraphs. Aim for 2 to 5 bullets of under 15 words each. Drop filler and restated code.
@@ -128,11 +129,11 @@ Run it once per review. For a stack, open the layers bottom first; each gets its
 
 Hunk needs a real terminal. Inside a Neovim terminal the script opens a Neovim tab. Inside herdr, tmux, or zellij it opens a tab or window there, with a pane fallback for older zellij versions. Inside kitty, WezTerm, Ghostty, Alacritty, Konsole, GNOME Terminal, or foot it opens a tab or window in that terminal. Otherwise it uses iTerm2 when running there or Terminal.app on macOS, and x-terminal-emulator on Linux with a graphical display. If no launcher applies, it prints the command for the user to run. Pass `--print` first to skip launching. It always prints a final `Tour command:` line.
 
-In hunk, the Tour pane on the right lists the tracks, each with its summary and its stops. `>` and `<` step through stops in tour order. `)` and `(` jump to the next or previous track. The current stop expands with its body, its ask, and its links in both directions. `L` follows a link and `B` goes back. A stacked tour also lists every layer of the stack under the verdict and marks the one under review. The whole diff stays visible, with tour files sorted first. `{` and `}` jump between annotated hunks, `a` toggles the inline notes, and `c` adds a note, which comes to you as a question. `V` records the reviewer's decision on the current stop. `Q` asks you a question.
+In hunk, the Tour pane on the right lists the tracks, each with its summary and its stops. `>` and `<` step through stops in tour order. `)` and `(` jump to the next or previous track. The current stop expands with its body, its ask, and its links in both directions. Its **Post to PR** button asks you to turn that stop into a PR comment. `L` follows a link and `B` goes back. A stacked tour also lists every layer of the stack under the verdict and marks the one under review. The whole diff stays visible, with tour files sorted first. `{` and `}` jump between annotated hunks, `a` toggles the inline notes, and `c` adds a note, which comes to you as a question. `V` records the reviewer's decision on the current stop. `Q` asks you a question.
 
 ## 9. Answer the reviewer
 
-The reviewer talks to you from Hunk while the tour is open. Four things become requests. Every note is a question. A reply under one of your answers is a follow-up. `Q` sends a question. `V` sends a decision on a stop: `agree`, `disagree`, or `unsure`, plus an optional comment. Run from the worktree, with every open tour of a stack at once:
+The reviewer talks to you from Hunk while the tour is open. Five things become requests. Every note is a question. A reply under one of your answers is a follow-up. `Q` sends a question. `V` sends a decision on a stop: `agree`, `disagree`, or `unsure`, plus an optional comment. **Post to PR** sends a `comment` request for that stop. Run from the worktree, with every open tour of a stack at once:
 
 ```bash
 hunk --extension <skill> tour wait <tour.json>... [--timeout <seconds>]
@@ -140,11 +141,12 @@ hunk --extension <skill> tour wait <tour.json>... [--timeout <seconds>]
 
 It blocks until something needs you, then prints one JSON line. Its `next` field says what to run. The default timeout is 90 seconds. Keep `--timeout` below your shell tool's limit.
 
-- `pending`. `items` lists the requests, each with its `tour`, `id`, `kind`, `text` or `decision` and `comment`, and the `stop` it was made at. Answer each one, then run `wait` again.
+- `pending`. `items` lists the requests, each with its `tour`, `id`, `kind`, and the `stop` it was made at. The content is `text`, `decision` and `comment`, or `body` for a `comment` request. Answer each one, then run `wait` again.
   ```bash
   hunk --extension <skill> tour answer <tour.json> <id> --text '<answer>'
   ```
   The answer appears in Hunk as a reply under the reviewer's note, or as a note at the line or stop the request names. The first line becomes the note's summary, so keep it short. For a `decision`, say whether you agree and why. An `agree` with no comment never reaches you.
+- A `comment` request carries the stop's `title`, `ask`, and `anchor` in `stop`, plus its full `body`. Reword it slightly as actionable feedback for the author: what to change and why. Keep the facts and evidence. Turn the reviewer-facing ask into a request or question to the author. Drop `[[id]]` tour links and bullets-for-the-reviewer framing. Keep it short. `tour answer` posts it as a line comment on the PR at the stop, then confirms in Hunk with the GitHub link.
 - `idle`. Nothing arrived before the timeout. Run `wait` again.
 - `finished` or `closed`. The reviewer chose **Finish review** in the Extensions menu, or quit Hunk. The payload has `decisions`, the latest decision per stop, and `transcript`, every request with its status and your answer. Go to step 10.
 
@@ -156,4 +158,4 @@ For a stack, start with the stack number and one line per layer (PR, verdict, st
 
 Reply with the verdict and the intent statement. List the tracks, each with a one-line summary and its stops, one line each as number, `kind`, title, and `path:line`. If you used fewer stops than the budget, say why. Include the unchecked scope, the `Tour command:` line (`open-tour.sh --print` gives it without opening a terminal), and each review's `cleanup` command from step 1, copied as is. It removes the worktree, the review branch, any fetched PR ref, and the Q&A files beside the tour.
 
-When step 9 ended with `finished` or `closed`, add a review draft after the report. Use `decisions` and `transcript`. For each decided stop, give the decision, the reviewer's comment, and what you answered. Lead with the `disagree` and `unsure` stops. Then propose the overall verdict the decisions support, and the comments the reviewer could post to the author. The draft is text in your reply. Post nothing to GitHub.
+When step 9 ended with `finished` or `closed`, add a review draft after the report. Use `decisions` and `transcript`. For each decided stop, give the decision, the reviewer's comment, and what you answered. Lead with the `disagree` and `unsure` stops. Then propose the overall verdict the decisions support, and the comments the reviewer could post to the author. The draft is text in your reply. Post nothing else to GitHub.
