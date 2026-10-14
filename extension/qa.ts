@@ -176,6 +176,10 @@ export async function runWait(args: readonly string[], ctx: ExtensionCliCommandC
   return { kind: "exit", code: 0 };
 }
 
+export function sessionIdForPid(_list: unknown, _pid: number): string | null {
+  throw new Error("not implemented");
+}
+
 export function sessionAddArgs(plan: PostPlan, repo: string): string[] {
   const target =
     plan.kind === "reply"
