@@ -103,7 +103,9 @@ def cleanup_command(repo, worktree, branch, ref):
     steps = [["worktree", "remove", "--force", worktree], ["branch", "-D", branch]]
     if ref:
         steps.append(["update-ref", "-d", ref])
-    return " && ".join(shlex.join(["git", "-C", repo, *step]) for step in steps)
+    commands = [shlex.join(["git", "-C", repo, *step]) for step in steps]
+    commands.append(shlex.join(["rm", "-rf", worktree + ".tour.qa"]))
+    return " && ".join(commands)
 
 
 def build_review(repo, slug, base, head, title, url=None, number=None, body=None, stack=None, ref=None):

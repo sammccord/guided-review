@@ -140,14 +140,23 @@ These keys work while a tour is open in Hunk:
 | `(` | Start of the current track, then the previous track | guided-review |
 | `L` | Follow a link from the current stop. With more than one link, Hunk asks which. | guided-review |
 | `B` | Back to the stop you left by following a link | guided-review |
+| `V` | Decide the current stop as agree, disagree, or unsure, with an optional comment | guided-review |
+| `Q` | Ask the agent a question about the current line | guided-review |
 | none | **Restart tour**, from the **Extensions** menu | guided-review |
+| none | **Finish review**, from the **Extensions** menu. Tells the agent to draft the review from your decisions | guided-review |
 | `{` `}` | Previous or next annotated hunk | Hunk |
 | `a` | Show or hide the inline tour notes | Hunk |
-| `c` | Add your own review note | Hunk |
+| `c` | Add your own review note. A note that starts with `?` is a question for the agent | Hunk |
 | `s` | Hide or show the file sidebar, which makes room for the **Tour** pane in a narrow terminal | Hunk |
 | `q` | Quit | Hunk |
 
 Clicking a stop in the **Tour** pane jumps to it. Clicking a link row follows the link.
+
+## Talk to the agent from Hunk
+
+While the tour is open, the agent that wrote it waits for you. Press `V` on a stop to record your decision, `Q` to ask about the line you are on, or `c` and start the note with `?`. A reply under one of the agent's answers is a follow-up. Answers appear as threaded notes in the diff. The **Tour** pane shows how many stops you have decided, how many questions wait, and whether the agent is listening. Each decided stop gets a badge. `✓` is agree, `✗` is disagree, and `?` is unsure. When you are done, choose **Finish review** in the **Extensions** menu or quit Hunk. The agent then drafts the review from your decisions and the conversation.
+
+Requests and answers are JSON files in a `.tour.qa` directory beside the tour file. The review's `cleanup` command removes it.
 
 ## Repository layout
 

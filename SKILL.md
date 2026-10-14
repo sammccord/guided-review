@@ -33,7 +33,7 @@ Each review gets branch `review/<slug>` in a worktree under `.git/guided-review/
 
 ### Stacks
 
-When `reviews` has more than one entry, run steps 2 to 7 once per review and write one tour per layer. Never merge layers into one tour.
+When `reviews` has more than one entry, run steps 2 to 7 once per review and write one tour per layer. Step 9 waits on every layer's tour at once. Never merge layers into one tour.
 
 - Go bottom to top. A layer may rely on the layers below it, so read their tours or diffs for context, but judge only the layer's own diff.
 - A problem introduced in a lower layer belongs in that layer's tour, even when you notice it while reading a higher one. Link nothing across tours; mention the other layer by PR number instead.
@@ -128,10 +128,32 @@ Run it once per review. For a stack, open the layers bottom first; each gets its
 
 Hunk needs a real terminal. Inside a Neovim terminal the script opens a Neovim tab. Inside herdr, tmux, or zellij it opens a tab or window there, with a pane fallback for older zellij versions. Inside kitty, WezTerm, Ghostty, Alacritty, Konsole, GNOME Terminal, or foot it opens a tab or window in that terminal. Otherwise it uses iTerm2 when running there or Terminal.app on macOS, and x-terminal-emulator on Linux with a graphical display. If no launcher applies, it prints the command for the user to run. Pass `--print` first to skip launching. It always prints a final `Tour command:` line.
 
-In hunk, the Tour pane on the right lists the tracks, each with its summary and its stops. `>` and `<` step through stops in tour order. `)` and `(` jump to the next or previous track. The current stop expands with its body, its ask, and its links in both directions. `L` follows a link and `B` goes back. A stacked tour also lists every layer of the stack under the verdict and marks the one under review. The whole diff stays visible, with tour files sorted first. `{` and `}` jump between annotated hunks, `a` toggles the inline notes, and `c` adds the reviewer's own note.
+In hunk, the Tour pane on the right lists the tracks, each with its summary and its stops. `>` and `<` step through stops in tour order. `)` and `(` jump to the next or previous track. The current stop expands with its body, its ask, and its links in both directions. `L` follows a link and `B` goes back. A stacked tour also lists every layer of the stack under the verdict and marks the one under review. The whole diff stays visible, with tour files sorted first. `{` and `}` jump between annotated hunks, `a` toggles the inline notes, and `c` adds the reviewer's own note. `V` records the reviewer's decision on the current stop, `Q` asks you a question, and a note that starts with `?` is a question too.
 
-## 9. Report
+## 9. Answer the reviewer
+
+The reviewer talks to you from Hunk while the tour is open. Four things become requests. A note that starts with `?`. A reply under one of your answers. A question typed after `Q`. A decision on a stop after `V`, which is `agree`, `disagree`, or `unsure`, plus an optional comment. Run from the worktree, with every open tour of a stack at once:
+
+```bash
+hunk --extension <skill> tour wait <tour.json>... [--timeout <seconds>]
+```
+
+It blocks until something needs you, then prints one JSON line. Its `next` field says what to run. The default timeout is 90 seconds. Keep `--timeout` below your shell tool's limit.
+
+- `pending`. `items` lists the requests, each with its `tour`, `id`, `kind`, `text` or `decision` and `comment`, and the `stop` it was made at. Answer each one, then run `wait` again.
+  ```bash
+  hunk --extension <skill> tour answer <tour.json> <id> --text '<answer>'
+  ```
+  The answer appears in Hunk as a reply under the reviewer's note, or as a note at the line or stop the request names. The first line becomes the note's summary, so keep it short. For a `decision`, say whether you agree and why. An `agree` with no comment never reaches you.
+- `idle`. Nothing arrived before the timeout. Run `wait` again.
+- `finished` or `closed`. The reviewer chose **Finish review** in the Extensions menu, or quit Hunk. The payload has `decisions`, the latest decision per stop, and `transcript`, every request with its status and your answer. Go to step 10.
+
+Answer from what you read in step 4, and say when you do not know. `answer` posts once per request. A request that was already answered is reported as `already-answered`, so rerunning after an interruption is safe.
+
+## 10. Report
 
 For a stack, start with the stack number and one line per layer (PR, verdict, stop count), then give the full report below for each layer, bottom first.
 
-Reply with the verdict and the intent statement. List the tracks, each with a one-line summary and its stops, one line each as number, `kind`, title, and `path:line`. If you used fewer stops than the budget, say why. Include the unchecked scope, the `Tour command:` line (`open-tour.sh --print` gives it without opening a terminal), and each review's `cleanup` command from step 1, copied as is. It removes the worktree, the review branch, and any fetched PR ref.
+Reply with the verdict and the intent statement. List the tracks, each with a one-line summary and its stops, one line each as number, `kind`, title, and `path:line`. If you used fewer stops than the budget, say why. Include the unchecked scope, the `Tour command:` line (`open-tour.sh --print` gives it without opening a terminal), and each review's `cleanup` command from step 1, copied as is. It removes the worktree, the review branch, any fetched PR ref, and the Q&A files beside the tour.
+
+When step 9 ended with `finished` or `closed`, add a review draft after the report. Use `decisions` and `transcript`. For each decided stop, give the decision, the reviewer's comment, and what you answered. Lead with the `disagree` and `unsure` stops. Then propose the overall verdict the decisions support, and the comments the reviewer could post to the author. The draft is text in your reply. Post nothing to GitHub.
