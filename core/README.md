@@ -4,7 +4,7 @@ Renderer-independent logic for guided-review tours. An agent writes a tour file.
 
 ## Modules
 
-`src/` holds these modules. `index.ts` re-exports every module except `git.ts`.
+`src/` holds these modules. `index.ts` re-exports every module except `git.ts` and `mailbox.ts`.
 
 | Module | Exports |
 | --- | --- |
@@ -15,8 +15,10 @@ Renderer-independent logic for guided-review tours. An agent writes a tour file.
 | `stack.ts` | `stackPosition`, which gives the current layer's 1-based position, the layer count, and the layers below and above it, plus `StackPosition` |
 | `validate.ts` | `validateTour`, which parses, loads the diff ranges, and checks anchors, then returns `checkStopSize` and `checkBullets` warnings, plus `ValidateResult` |
 | `navigator.ts` | `initialCursor` and `move`, a pure reducer over `next`, `prev`, `nextTrack`, `prevTrack`, `goto`, `restart`, `follow`, and `back`, plus `TourCursor`, `TourMove`, and `MoveResult` |
+| `qa.ts` | The reviewer-to-agent Q&A model: `Request` (`question`, `followup`, `ask`, `decision`), `Answer`, `Heartbeat`, `SessionRecord`, `Mailbox`, the `parse*` boundary functions, and the projections `classifyNote`, `needsReply`, `pending`, `decisions`, `agentStatus`, `statusText`, `reviewEnd`, `postPlan`, `transcript`, `requestLabel` |
+| `mailbox.ts` | `mailboxPaths`, `readMailbox`, `writeJsonAtomic`, `writeJsonAtomicSync`, `nextSeq`, `requestPath`, `answerPath`, the mailbox directory beside a tour. It needs Node, so `@guided-review/core/mailbox` exports it and the index does not. |
 | `git.ts` | `readDiffRanges`, which runs `git diff base...head`. It needs Node, so `@guided-review/core/git` exports it and the index does not. |
-| `index.ts` | Everything above except `git.ts` |
+| `index.ts` | Everything above except `mailbox.ts` and `git.ts` |
 
 ## Using it from a renderer
 
