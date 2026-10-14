@@ -5,6 +5,7 @@ import {
   decisions,
   emptyMailbox,
   needsReply,
+  ownsSession,
   parseAnswer,
   parseHeartbeat,
   parseRequest,
@@ -96,28 +97,21 @@ describe("parse", () => {
 describe("classifyNote", () => {
   const box = mailbox([request(1, { kind: "question", noteId: "user:1" })], [answer("q-1", "mcp:9")]);
 
-  test("a leading ? makes a question", () => {
-    expect(classifyNote({ id: "user:5", body: "? why this bound" }, box)).toEqual({ kind: "question", text: "why this bound" });
-    expect(classifyNote({ id: "user:5", body: "looks fine" }, box)).toBeNull();
-    expect(classifyNote({ id: "user:5", body: "?" }, box)).toBeNull();
+  test("every top-level note is a question", () => {
+    expect(classifyNote({ id: "user:5", body: "Is this comment too verbose?" }, box)).toEqual({ kind: "question", text: "Is this comment too verbose?" });
+    expect(classifyNote({ id: "user:5", body: "  plain note  " }, box)).toEqual({ kind: "question", text: "plain note" });
+    expect(classifyNote({ id: "user:5", body: "? why" }, box)).toEqual({ kind: "question", text: "? why" });
+    expect(classifyNote({ id: "user:5", body: "   " }, box)).toBeNull();
   });
 
-  test("a reply under an agent answer or a question is a follow-up", () => {
+  test("a reply inside a Q&A thread is a follow-up", () => {
     expect(classifyNote({ id: "user:6", parentId: "mcp:9", body: "and the test?" }, box)).toEqual({
       kind: "followup",
       parentId: "mcp:9",
       text: "and the test?",
     });
-    expect(classifyNote({ id: "user:6", parentId: "user:1", body: "? more" }, box)).toEqual({
-      kind: "followup",
-      parentId: "user:1",
-      text: "more",
-    });
-    expect(classifyNote({ id: "user:6", parentId: "user:77", body: "own thread" }, box)).toBeNull();
-    expect(classifyNote({ id: "user:6", parentId: "user:77", body: "? asks anyway" }, box)).toEqual({
-      kind: "question",
-      text: "asks anyway",
-    });
+    expect(classifyNote({ id: "user:6", parentId: "user:1", body: "more" }, box)).toEqual({ kind: "followup", parentId: "user:1", text: "more" });
+    expect(classifyNote({ id: "user:6", parentId: "user:77", body: "outside a thread" }, box)).toEqual({ kind: "question", text: "outside a thread" });
   });
 });
 
@@ -198,6 +192,15 @@ describe("reviewEnd", () => {
     expect(reviewEnd(mailbox([], [], { session: { ...session, finishedAt: "t", closedAt: "t" } }), dead)).toEqual({ kind: "finished" });
     expect(reviewEnd(mailbox([], [], { session: { ...session, closedAt: "t" } }), alive)).toEqual({ kind: "closed" });
     expect(reviewEnd(mailbox([], [], { session }), dead)).toEqual({ kind: "closed" });
+  });
+});
+
+describe("ownsSession", () => {
+  test("only the same pid and openedAt own the session on disk", () => {
+    expect(ownsSession(null, session)).toBe(false);
+    expect(ownsSession({ ...session, pid: session.pid + 1 }, session)).toBe(false);
+    expect(ownsSession({ ...session, openedAt: "2026-10-14T10:00:00Z" }, session)).toBe(false);
+    expect(ownsSession({ ...session }, session)).toBe(true);
   });
 });
 

@@ -55,6 +55,10 @@ export interface SessionRecord {
   closedAt?: string;
 }
 
+export function ownsSession(_onDisk: SessionRecord | null, _mine: SessionRecord): boolean {
+  throw new Error("not implemented");
+}
+
 export interface Mailbox {
   session: SessionRecord | null;
   requests: Request[];
