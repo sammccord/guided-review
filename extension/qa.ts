@@ -331,7 +331,7 @@ function currentStopRef(access: TourAccess): StopRef | null {
   return current ? stopRef(current) : null;
 }
 
-async function onNoteCreated(note: ExtensionReviewNote, access: TourAccess) {
+async function onNoteCreated(note: ExtensionReviewNote, ctx: ExtensionEventContext, access: TourAccess) {
   const { paths } = state;
   if (!paths || note.draft) return;
   const kind = classifyNote(note, await readMailbox(paths));
@@ -344,6 +344,7 @@ async function onNoteCreated(note: ExtensionReviewNote, access: TourAccess) {
       ? { kind: "question", noteId: note.id, anchor, text: kind.text, stop }
       : { kind: "followup", noteId: note.id, parentId: kind.parentId, anchor, text: kind.text, stop },
   );
+  ctx.notify("Question sent to the agent");
 }
 
 function selectedAnchor(ctx: ExtensionCommandContext): Anchor | null {
@@ -438,7 +439,7 @@ function startPolling(ctx: ExtensionEventContext, access: TourAccess) {
 export function registerQa(hunk: HunkExtensionAPI, access: TourAccess) {
   hunk.on("changeset_loaded", (_payload, ctx) => startPolling(ctx, access));
   hunk.on("session_reload", (_payload, ctx) => startPolling(ctx, access));
-  hunk.on("note_created", ({ note }) => onNoteCreated(note, access));
+  hunk.on("note_created", ({ note }, ctx) => onNoteCreated(note, ctx, access));
   hunk.on("shutdown", () => {
     if (poller) clearInterval(poller);
     close();

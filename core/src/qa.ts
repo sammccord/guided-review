@@ -191,14 +191,10 @@ function threadIds(box: Mailbox): Set<string> {
 }
 
 export function classifyNote(note: { id: string; parentId?: string; body: string }, box: Mailbox): NoteClass {
-  const body = note.body.trim();
-  if (note.parentId !== undefined && threadIds(box).has(note.parentId)) {
-    const text = body.startsWith("?") ? body.slice(1).trim() : body;
-    return text === "" ? null : { kind: "followup", parentId: note.parentId, text };
-  }
-  if (!body.startsWith("?")) return null;
-  const text = body.slice(1).trim();
-  return text === "" ? null : { kind: "question", text };
+  const text = note.body.trim();
+  if (text === "") return null;
+  if (note.parentId !== undefined && threadIds(box).has(note.parentId)) return { kind: "followup", parentId: note.parentId, text };
+  return { kind: "question", text };
 }
 
 export function needsReply(request: Request): boolean {
