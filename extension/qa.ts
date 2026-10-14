@@ -176,17 +176,25 @@ export async function runWait(args: readonly string[], ctx: ExtensionCliCommandC
   return { kind: "exit", code: 0 };
 }
 
-export function sessionIdForPid(_list: unknown, _pid: number): string | null {
-  throw new Error("not implemented");
+/** `--repo` is ambiguous when two Hunk sessions share the worktree, so answers address the mailbox owner's session by pid. */
+export function sessionIdForPid(list: unknown, pid: number): string | null {
+  if (typeof list !== "object" || list === null) return null;
+  const sessions = (list as { sessions?: unknown }).sessions;
+  if (!Array.isArray(sessions)) return null;
+  for (const entry of sessions) {
+    const { sessionId, pid: entryPid } = (entry ?? {}) as { sessionId?: unknown; pid?: unknown };
+    if (entryPid === pid && typeof sessionId === "string") return sessionId;
+  }
+  return null;
 }
 
-export function sessionAddArgs(plan: PostPlan, repo: string): string[] {
+export function sessionAddArgs(plan: PostPlan, sessionId: string): string[] {
   const target =
     plan.kind === "reply"
       ? ["--reply-to", plan.noteId]
       : ["--file", plan.anchor.path, plan.anchor.side === "new" ? "--new-line" : "--old-line", String(plan.anchor.line)];
   const rationale = plan.rationale === "" ? [] : ["--rationale", plan.rationale];
-  return ["session", "comment", "add", "--repo", repo, ...target, "--summary", plan.summary, ...rationale, "--author", "guided-review", "--json"];
+  return ["session", "comment", "add", sessionId, ...target, "--summary", plan.summary, ...rationale, "--author", "guided-review", "--json"];
 }
 
 function runHunk(args: readonly string[]): Promise<string> {
@@ -246,9 +254,14 @@ export async function runAnswer(args: readonly string[], ctx: ExtensionCliComman
   }
   let commentId: string | null;
   try {
-    commentId = commentIdOf(await runHunk(sessionAddArgs(plan, box.session.repo)));
+    const sessionId = sessionIdForPid(JSON.parse(await runHunk(["session", "list", "--json"])), box.session.pid);
+    if (!sessionId) {
+      await writeLine(ctx.stderr, `tour answer: the Hunk session for this tour (pid ${box.session.pid}) is not running; reopen the tour`);
+      return { kind: "exit", code: 1 };
+    }
+    commentId = commentIdOf(await runHunk(sessionAddArgs(plan, sessionId)));
   } catch (error) {
-    await writeLine(ctx.stderr, `tour answer: hunk session comment add failed: ${error instanceof Error ? error.message : String(error)}`);
+    await writeLine(ctx.stderr, `tour answer: hunk session failed: ${error instanceof Error ? error.message : String(error)}`);
     return { kind: "exit", code: 1 };
   }
   await writeJsonAtomic(answerPath(paths, request.id), { id: request.id, commentId, text: parsed.text, at: now() });
