@@ -13,17 +13,20 @@ import type {
   HunkExtensionAPI,
 } from "hunkdiff/extension";
 import {
+  approvalBlockers,
   classifyNote,
   DECISIONS,
   decisions,
   emptyMailbox,
   ownsSession,
+  parseTour,
   pending,
   postPlan,
   requestLabel,
   reviewEnd,
   statusText,
   transcript,
+  tourStops,
   type Anchor,
   type Decision,
   type Mailbox,
@@ -39,6 +42,7 @@ import {
   mailboxPaths,
   nextSeq,
   readMailbox,
+  readJson,
   readSessionSync,
   requestPath,
   writeJsonAtomic,
@@ -66,6 +70,7 @@ export const QA_USAGE = [
   "usage: hunk tour check|open <tour.json>",
   "       hunk tour wait <tour.json>... [--timeout <seconds>]",
   "       hunk tour answer <tour.json> <id> --text <answer>",
+  "       hunk tour approve <tour.json> [--body <text>]",
 ];
 
 function now(): string {
@@ -143,11 +148,23 @@ function answerCommand(tour: string, id: string): string {
   return `hunk --extension ${EXTENSION_DIR} tour answer ${tour} ${id} --text '<answer>'`;
 }
 
-function finalPayload(boxes: readonly TourBox[], ends: readonly Exclude<ReviewEnd, null>[]) {
+async function readTour(path: string) {
+  const parsed = parseTour(JSON.parse(await readFile(path, "utf8")));
+  if (!parsed.ok) throw new Error(`${path}: ${parsed.errors.join("; ")}`);
+  return parsed.tour;
+}
+
+async function finalPayload(boxes: readonly TourBox[], ends: readonly Exclude<ReviewEnd, null>[]) {
+  const approval = await Promise.all(boxes.map(async ({ tour, box }) => {
+    const loaded = await readTour(tour);
+    const blockers = approvalBlockers(loaded.verdict, tourStops(loaded).length, box);
+    return { tour, eligible: blockers.length === 0, blockers };
+  }));
   return {
     kind: ends.every((end) => end.kind === "finished") ? "finished" : "closed",
     decisions: boxes.flatMap(({ tour, box }) => [...decisions(box)].map(([stop, decision]) => ({ tour, stop, decision }))),
     transcript: boxes.flatMap(({ tour, box }) => transcript(box).map((entry) => ({ tour, ...entry }))),
+    approval,
     next: "write the review draft",
   };
 }
@@ -176,7 +193,12 @@ export async function runWait(args: readonly string[], ctx: ExtensionCliCommandC
       return { kind: "exit", code: 0 };
     }
     if (ends.every((end) => end !== null)) {
-      await writeLine(ctx.stdout, finalPayload(boxes, ends.filter((end) => end !== null)));
+      try {
+        await writeLine(ctx.stdout, await finalPayload(boxes, ends.filter((end) => end !== null)));
+      } catch (error) {
+        await writeLine(ctx.stderr, `tour wait: ${error instanceof Error ? error.message : String(error)}`);
+        return { kind: "exit", code: 1 };
+      }
       return { kind: "exit", code: 0 };
     }
     if (Date.now() >= deadline) break;
@@ -229,6 +251,13 @@ export function githubCommentArgs(target: PullRequestTarget, commitId: string, a
   ];
 }
 
+export function githubApproveArgs(target: PullRequestTarget, commitId: string, body?: string): string[] {
+  return [
+    "api", "--hostname", target.host, "--method", "POST", `repos/${target.owner}/${target.repo}/pulls/${target.number}/reviews`,
+    "-f", "event=APPROVE", "-f", `commit_id=${commitId}`, ...(body === undefined ? [] : ["-f", `body=${body}`]),
+  ];
+}
+
 function runGh(args: readonly string[], cwd: string): Promise<string> {
   return new Promise((done, fail) => {
     execFile("gh", args, { cwd, maxBuffer: 16 * 1024 * 1024 }, (error, stdout, stderr) => {
@@ -236,6 +265,62 @@ function runGh(args: readonly string[], cwd: string): Promise<string> {
       else done(String(stdout));
     });
   });
+}
+
+function reviewUrl(raw: unknown): string {
+  if (typeof raw !== "object" || raw === null || !("html_url" in raw) || typeof raw.html_url !== "string") {
+    throw new Error("gh returned no review html_url");
+  }
+  return raw.html_url;
+}
+
+export async function runApprove(args: readonly string[], ctx: ExtensionCliCommandContext): Promise<ExtensionCliCommandResult> {
+  const [file, flag, body, ...extra] = args;
+  if (!file || (flag !== undefined && (flag !== "--body" || body === undefined || !body.trim())) || extra.length > 0) {
+    await writeLine(ctx.stderr, "tour approve: expected <tour.json> [--body <text>]");
+    return { kind: "exit", code: 2 };
+  }
+  try {
+    const path = resolve(ctx.cwd, file);
+    const tour = await readTour(path);
+    const paths = mailboxPaths(path);
+    const box = await readMailbox(paths);
+    const session = box.session;
+    if (!session || !reviewEnd(box, pidAlive)) throw new Error("review has not ended; finish or close Hunk first");
+    const blockers = approvalBlockers(tour.verdict, tourStops(tour).length, box);
+    if (blockers.length) throw new Error(`approval blocked:\n${blockers.join("\n")}`);
+    const target = tour.url ? parsePullRequestUrl(tour.url) : null;
+    if (!target) throw new Error("tour has no PR url");
+    const head = session.head;
+    const approved = await readJson(paths.approved);
+    if (typeof approved === "object" && approved !== null && "head" in approved && approved.head === head && "url" in approved && typeof approved.url === "string") {
+      await writeLine(ctx.stdout, { status: "already-approved", url: approved.url });
+      return { kind: "exit", code: 0 };
+    }
+    const api = ["api", "--hostname", target.host];
+    const endpoint = `repos/${target.owner}/${target.repo}/pulls/${target.number}`;
+    const pr: unknown = JSON.parse(await runGh([...api, endpoint], session.repo));
+    if (typeof pr !== "object" || pr === null || !("head" in pr) || typeof pr.head !== "object" || pr.head === null || !("sha" in pr.head) || typeof pr.head.sha !== "string") {
+      throw new Error("gh returned no PR head.sha");
+    }
+    if (pr.head.sha !== head) throw new Error(`PR head moved from ${head} to ${pr.head.sha}; re-run the review`);
+    const login = (await runGh([...api, "user", "--jq", ".login"], session.repo)).trim();
+    if (!login) throw new Error("gh returned no current user login");
+    const pages: unknown = JSON.parse(await runGh([...api, "--paginate", "--slurp", `${endpoint}/reviews`], session.repo));
+    if (!Array.isArray(pages) || !pages.every(Array.isArray)) throw new Error("gh returned invalid PR reviews");
+    const existing = pages.flat().find((review: unknown) =>
+      typeof review === "object" && review !== null && "state" in review && review.state === "APPROVED" &&
+      "commit_id" in review && review.commit_id === head && "user" in review && typeof review.user === "object" &&
+      review.user !== null && "login" in review.user && review.user.login === login,
+    );
+    const url = reviewUrl(existing ?? JSON.parse(await runGh(githubApproveArgs(target, head, body), session.repo)));
+    await writeJsonAtomic(paths.approved, { url, head, at: now() });
+    await writeLine(ctx.stdout, { status: existing ? "already-approved" : "approved", url });
+    return { kind: "exit", code: 0 };
+  } catch (error) {
+    await writeLine(ctx.stderr, `tour approve: ${error instanceof Error ? error.message : String(error)}`);
+    return { kind: "exit", code: 1 };
+  }
 }
 
 function runHunk(args: readonly string[]): Promise<string> {

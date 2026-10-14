@@ -150,7 +150,7 @@ It blocks until something needs you, then prints one JSON line. Its `next` field
   The answer appears in Hunk as a reply under the reviewer's note, or as a note at the line or stop the request names. The first line becomes the note's summary, so keep it short. For a `decision`, say whether you agree and why. An `agree` with no comment never reaches you.
 - A `comment` request carries the stop's `title`, `ask`, and `anchor` in `stop`, plus its full `body`. Reword it slightly as actionable feedback for the author: what to change and why. Keep the facts and evidence. Turn the reviewer-facing ask into a request or question to the author. Drop `[[id]]` tour links. Keep it short. `tour answer` posts it as a line comment on the PR at the stop, then confirms in Hunk with the GitHub link.
 - `idle`. Nothing arrived before the timeout. Run `wait` again.
-- `finished` or `closed`. The reviewer chose **Finish review** in the Extensions menu, or quit Hunk. The payload has `decisions`, the latest decision per stop, and `transcript`, every request with its status and your answer. Go to step 10.
+- `finished` or `closed`. The reviewer pressed `F`, chose **Finish review** in the Extensions menu, or quit Hunk. The payload has `decisions`, the latest decision per stop, `transcript`, every request with its status and your answer, and `approval`, eligibility and blockers for each tour. Go to step 10.
 
 Answer from what you read in step 4, and say when you do not know. `answer` posts once per request. A request that was already answered is reported as `already-answered`, so rerunning after an interruption is safe.
 
@@ -160,4 +160,14 @@ For a stack, start with the stack number and one line per layer (PR, verdict, st
 
 Reply with the verdict and the intent statement. List the tracks, each with a one-line summary and its stops, one line each as number, `kind`, title, and `path:line`. If you used fewer stops than the budget, say why. Include the unchecked scope, the `Tour command:` line (`open-tour.sh --print` gives it without opening a terminal), and each review's `cleanup` command from step 1, copied as is. It removes the worktree, the review branch, any fetched PR ref, and the Q&A files beside the tour.
 
-When step 9 ended with `finished` or `closed`, add a review draft after the report. Use `decisions` and `transcript`. For each decided stop, give the decision, the reviewer's comment, and what you answered. Lead with the `disagree` and `unsure` stops. Then propose the overall verdict the decisions support, and the comments the reviewer could post to the author. The draft is text in your reply. Post nothing else to GitHub.
+When step 9 ended with `finished` or `closed`, add a review draft after the report. Use `decisions` and `transcript`. For each decided stop, give the decision, the reviewer's comment, and what you answered. Lead with the `disagree` and `unsure` stops. Then propose the overall verdict the decisions support, and the comments the reviewer could post to the author. The draft is text in your reply. Post nothing else to GitHub except the explicitly confirmed approval below.
+
+After the draft, check `approval` for each tour. If `eligible` is false, briefly say why. Do not ask to approve it. If `eligible` is true, also judge the full transcript. Decision comments, questions, and your own replies must have no unresolved concerns. Eligibility alone is not permission. If any qualms remain, do not ask or approve.
+
+Only when eligible and free of qualms, end your reply by explicitly asking: “Approve PR #N at head <sha>?” Wait for an explicit yes in the agent chat. Only then run:
+
+```bash
+hunk --extension <skill> tour approve <tour.json> --body '<short summary>'
+```
+
+Never approve without that yes. For a stack, get confirmation for each layer's PR and head, then run one approval per confirmed layer tour. The CLI rechecks the verdict, latest decisions, undecided stops, pending replies, and current PR head. It refuses any blocker. It records approval in `approved.json` and avoids reposting an approval at the same head.

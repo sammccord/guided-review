@@ -9,6 +9,7 @@ export interface MailboxPaths {
   inbox: string;
   answered: string;
   agent: string;
+  approved: string;
 }
 
 /** `<x>.tour.json` keeps its mailbox at `<x>.tour.qa/`, beside the tour and outside the worktree. */
@@ -20,6 +21,7 @@ export function mailboxPaths(tourPath: string): MailboxPaths {
     inbox: join(root, "inbox"),
     answered: join(root, "answered"),
     agent: join(root, "agent.json"),
+    approved: join(root, "approved.json"),
   };
 }
 
@@ -31,7 +33,7 @@ export function answerPath(paths: MailboxPaths, id: string): string {
   return join(paths.answered, `${id}.json`);
 }
 
-async function readJson(path: string): Promise<unknown> {
+export async function readJson(path: string): Promise<unknown> {
   try {
     return JSON.parse(await readFile(path, "utf8"));
   } catch {

@@ -42,7 +42,7 @@ import {
   type Verdict,
 } from "../core/src/index";
 import { readDiffRanges } from "../core/src/git";
-import { decisionBadge, openSession, qaHint, QA_KEYS, QA_USAGE, registerQa, requestComment, requestDecision, runAnswer, runWait, useMailbox, type TourAccess } from "./qa";
+import { decisionBadge, openSession, qaHint, QA_KEYS, QA_USAGE, registerQa, requestComment, requestDecision, runAnswer, runApprove, runWait, useMailbox, type TourAccess } from "./qa";
 import { toSidecar } from "./sidecar";
 
 const PANE_ID = "tour";
@@ -97,6 +97,7 @@ async function runTourCli(args: readonly string[], ctx: ExtensionCliCommandConte
   const [subcommand, file, ...extra] = args;
   if (subcommand === "wait") return runWait(args.slice(1), ctx);
   if (subcommand === "answer") return runAnswer(args.slice(1), ctx);
+  if (subcommand === "approve") return runApprove(args.slice(1), ctx);
   if ((subcommand !== "check" && subcommand !== "open") || !file || extra.length > 0) {
     await writeLines(ctx.stderr, QA_USAGE);
     return { kind: "exit", code: 2 };
@@ -652,7 +653,7 @@ function TourPane({ files, theme, actions, keybindings }: ExtensionPaneProps): R
 
 export default function registerGuidedReview(hunk: HunkExtensionAPI) {
   hunk.registerCliCommand(
-    { name: "tour", summary: "Check, open, or answer a guided review tour", usage: "check|open|wait|answer <tour.json> ..." },
+    { name: "tour", summary: "Check, open, answer, or approve a guided review tour", usage: "check|open|wait|answer|approve <tour.json> ..." },
     runTourCli,
   );
 

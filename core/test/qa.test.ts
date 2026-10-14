@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   agentStatus,
+  approvalBlockers,
   classifyNote,
   commentStatus,
   decisions,
@@ -22,6 +23,7 @@ import {
   type Request,
   type SessionRecord,
   type StopRef,
+  type Verdict,
 } from "../src/index";
 
 const anchor = { path: "src/a.ts", side: "new" as const, line: 10 };
@@ -99,6 +101,26 @@ describe("parse", () => {
     expect(parseSession(ended)).toEqual(ended);
     expect(parseSession({ ...session, finishedAt: 3 })).toBeNull();
     expect(parseSession({ ...session, pid: "4242" })).toBeNull();
+  });
+});
+
+describe("approvalBlockers", () => {
+  const agree = samples.decision(1, { stop: { ...stopRef, number: 1 } });
+  test.each<{ name: string; verdict: Verdict; count: number; requests: Request[]; answers: Answer[]; expected: string[] }>([
+    { name: "clean", verdict: "approve", count: 1, requests: [agree], answers: [], expected: [] },
+    { name: "request changes", verdict: "request-changes", count: 1, requests: [agree], answers: [], expected: ["verdict is request-changes"] },
+    { name: "discuss", verdict: "discuss", count: 1, requests: [agree], answers: [], expected: ["verdict is discuss"] },
+    { name: "disagree even after a reply", verdict: "approve", count: 1, requests: [{ ...agree, decision: "disagree" }], answers: [answer("q-1")], expected: ["stop 1: disagree"] },
+    { name: "unsure even after a reply", verdict: "approve", count: 1, requests: [{ ...agree, decision: "unsure" }], answers: [answer("q-1")], expected: ["stop 1: unsure"] },
+    { name: "undecided", verdict: "approve", count: 3, requests: [agree], answers: [], expected: ["2 of 3 stops undecided"] },
+    { name: "out-of-range decision cannot fill missing stop", verdict: "approve", count: 1, requests: [samples.decision(1)], answers: [], expected: ["1 of 1 stops undecided"] },
+    { name: "pending reply", verdict: "approve", count: 1, requests: [agree, samples.ask(2)], answers: [], expected: ["1 requests awaiting a reply"] },
+    { name: "pending comment on agree", verdict: "approve", count: 1, requests: [{ ...agree, comment: "Check this" }], answers: [], expected: ["1 requests awaiting a reply"] },
+    { name: "latest decision wins by sequence", verdict: "approve", count: 1, requests: [{ ...agree, seq: 2 }, { ...agree, id: "q-3", seq: 1, decision: "disagree" }], answers: [answer("q-3")], expected: [] },
+    { name: "answered concerns are left to the agent", verdict: "approve", count: 1, requests: [{ ...agree, comment: "But why?" }, samples.question(2), samples.comment(3)], answers: [answer("q-1"), answer("q-2"), answer("q-3")], expected: [] },
+    { name: "all blockers", verdict: "discuss", count: 3, requests: [{ ...agree, decision: "disagree" }, samples.decision(2, { decision: "unsure" })], answers: [], expected: ["verdict is discuss", "stop 1: disagree", "stop 2: unsure", "1 of 3 stops undecided", "2 requests awaiting a reply"] },
+  ])("$name", ({ verdict, count, requests, answers, expected }) => {
+    expect(approvalBlockers(verdict, count, mailbox(requests, answers))).toEqual(expected);
   });
 });
 
