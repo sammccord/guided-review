@@ -30,7 +30,7 @@ The whole diff stays visible. A tour orders your attention but does not hide any
 
 ## Asking the agent from inside Hunk
 
-The agent that wrote the tour holds the whole audit in its context. The reviewer can use that without leaving Hunk. Three inputs become requests. The first is a note that starts with `?`, or a reply under one of the agent's answers. The second is a question typed after `Q`. The third is a decision on the current stop after `V`, which is `agree`, `disagree`, or `unsure` with an optional comment. The agent answers inline as threaded notes through `hunk session comment add`, and uses the decisions to draft the review at the end.
+The agent that wrote the tour holds the whole audit in its context. The reviewer can use that without leaving Hunk. Every note the reviewer adds is a question. A reply under one of the agent's answers is a follow-up. `Q` sends a question. `V` sends a decision on the current stop: `agree`, `disagree`, or `unsure` with an optional comment. The agent answers inline as threaded notes through `hunk session comment add`, and uses the decisions to draft the review at the end.
 
 The two sides never share a process, so they talk through files. The mailbox is a directory beside the tour, `<tour>.tour.qa/`:
 
@@ -94,7 +94,7 @@ The renderer owns everything else: how a stop is revealed, how messages appear, 
 ## Known limits
 
 - **Hunk's extension API is experimental.** `package.json` declares `apiVersion: 25`, and Hunk's own README warns that the API may break between minor releases. The extension was built against Hunk 0.22.0 and the `hunkdiff` 0.23.0 types. On Hunk releases before API 26, the extension cannot tell which files the file filter hides, so a stop in a filtered-out file triggers Hunk's own warning when revealed.
-- **Inline tour notes are read-only.** They come from a sidecar file, so you cannot reply to them, resolve them, or edit them in Hunk. Notes you add with `c` are Hunk's own and never flow to GitHub. A note that starts with `?` becomes a question for the agent, and the agent's answer arrives as a reply under it. Other notes stay in Hunk.
+- **Inline tour notes are read-only.** They come from a sidecar file, so you cannot reply to them, resolve them, or edit them in Hunk. Notes you add with `c` never flow to GitHub. While a tour is open, every note goes to the agent, and its answer arrives as a reply under the note.
 - **The tour lives in memory.** Quitting Hunk forgets your position. Reopening the tour starts before stop 1. Decisions and questions are files beside the tour and survive a restart.
 - **Anchors must sit inside the diff.** A stop can only point at lines inside a hunk of `base...head`, context lines included. An unchanged caller in another file cannot be a stop, so the agent cites it in the stop's body instead.
 - **GitHub Enterprise works through `gh`, not `hunk gh`.** `prepare.py` calls `gh pr view` and `gh api --hostname <host>`, so any host `gh` is logged in to works. Stack detection also needs the host to offer the stacks API. Without it, `stackLookup` is `unavailable` and each PR is reviewed alone.
