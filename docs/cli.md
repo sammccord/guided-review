@@ -47,6 +47,8 @@ Runs the same checks as `tour check`. Errors stop it with status 1. Then it pins
 
 `--fresh` starts a new review generation even when the tour has not changed. Without it, reopening an unchanged tour resumes the same generation, with its decisions, questions, and answers. A changed repository, base, head, or tour content always starts a new generation. Old generations stay on disk and never enter the new review.
 
+Theme selections made in earlier tours are applied automatically, including with `--fresh`. They are saved separately from review history in `~/.config/guided-review/settings.json` (XDG-aware). A missing file leaves Hunk's theme configuration unchanged; invalid or unreadable settings produce a warning and the tour still opens.
+
 ## `tour wait`
 
 ```bash

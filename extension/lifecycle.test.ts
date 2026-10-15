@@ -51,15 +51,24 @@ test("tour open groups the full diff, keeps narrative navigation, resumes after 
     const data = tour({ base: "review-base", head: "HEAD", stops: files.slice(0, 3).map(file => stop({ path: file.path, line: 1 })) });
     const tourPath = join(repo, "review.tour.json");
     await writeJsonAtomic(tourPath, data);
-    registerGuidedReview(api);
+    const previousConfigHome = process.env.XDG_CONFIG_HOME;
+    const configHome = join(repo, "personal-config");
+    process.env.XDG_CONFIG_HOME = configHome;
+    try { registerGuidedReview(api); } finally {
+      if (previousConfigHome === undefined) delete process.env.XDG_CONFIG_HOME;
+      else process.env.XDG_CONFIG_HOME = previousConfigHome;
+    }
     expect(await transform(changeset, {} as never)).toBe(changeset);
 
     let opens = 0;
+    let expectedTheme: string | undefined;
     const open = async (extra: string[] = []) => {
       const result = await cli(["open", tourPath, ...extra], ctx);
       expect(result.kind).toBe("delegate");
       if (result.kind === "delegate") {
         expect(result.argv[1]).toBe(`${git("rev-parse", "review-base")}...${git("rev-parse", "HEAD")}`);
+        const themeIndex = result.argv.indexOf("--theme");
+        expect(themeIndex < 0 ? undefined : result.argv[themeIndex + 1]).toBe(expectedTheme);
         sidecars.add(result.argv[result.argv.indexOf("--agent-context") + 1]!);
       }
       expect(sidecars.size).toBe(1 + opens++);
@@ -73,6 +82,14 @@ test("tour open groups the full diff, keeps narrative navigation, resumes after 
     ]);
     expect(grouped.title).toBe(changeset.title);
     expect(changeset.files).toEqual(files);
+
+    const settingsFile = join(configHome, "guided-review", "settings.json");
+    expect(await Bun.file(settingsFile).exists()).toBe(false);
+    expectedTheme = "catppuccin-mocha";
+    for (const handler of events.get("theme_changed") ?? []) {
+      await handler({ themeId: expectedTheme } as never, { notify: () => { throw new Error("unexpected settings warning"); } } as never);
+    }
+    expect(await Bun.file(settingsFile).json()).toEqual({ version: 1, theme: expectedTheme });
 
     const revealed: string[] = [];
     const commandCtx = {
@@ -130,6 +147,22 @@ test("tour open groups the full diff, keeps narrative navigation, resumes after 
       expect(output.trim().endsWith("--fresh")).toBe(fresh);
       expect((await Bun.file(calls).text()).trim().split("\n")).toEqual(["--extension", new URL("..", import.meta.url).pathname.replace(/\/$/, ""), "tour", "check", tourPath]);
     }
+    const otherTour = join(repo, "another.tour.json");
+    await writeJsonAtomic(otherTour, { ...data, title: "Another tour" });
+    const another = await cli(["open", otherTour], ctx);
+    expect(another.kind).toBe("delegate");
+    if (another.kind === "delegate") {
+      expect(another.argv.slice(2, 4)).toEqual(["--theme", expectedTheme!]);
+      sidecars.add(another.argv[another.argv.indexOf("--agent-context") + 1]!);
+    }
+    await Bun.write(settingsFile, "invalid JSON");
+    const fallback = await cli(["open", otherTour, "--fresh"], ctx);
+    expect(fallback.kind).toBe("delegate");
+    if (fallback.kind === "delegate") {
+      expect(fallback.argv).not.toContain("--theme");
+      sidecars.add(fallback.argv[fallback.argv.indexOf("--agent-context") + 1]!);
+    }
+    expect(stderr).toContain("warning: could not load guided-review settings:");
     expect(await cli(["check", tourPath, "--fresh"], ctx)).toEqual({ kind: "exit", code: 2 });
     expect(await cli(["open", tourPath, "--unknown"], ctx)).toEqual({ kind: "exit", code: 2 });
   } finally {

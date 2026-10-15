@@ -6,6 +6,7 @@ This file lists all notable changes to this project. The format follows [Keep a 
 
 ### Added
 
+- Theme selections from **View > Themes** are saved immediately in user-scoped guided-review settings and restored across tours, repositories, and `--fresh` reviews.
 - `prepare.py <tour.json>...` and the skill accept shared tour files as the target. The agent checks out each tour's commits, skips the audit, and opens the tour unchanged.
 - `tour open <tour.json> --fresh` and `open-tour.sh --fresh` start a new review without importing saved history.
 - Unanswered requests show a "Waiting for the agent" placeholder in Hunk and an animated spinner on waiting stop rows and before the Tour pane status text.

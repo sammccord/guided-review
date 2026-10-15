@@ -47,6 +47,7 @@ import { decisionBadge, openSession, qaHint, QA_KEYS, QA_USAGE, registerQa, requ
 import { toSidecar } from "./sidecar";
 import { groupFilesByDirectory } from "./files";
 import { pinTourRefs } from "./session";
+import { registerSettings, TourSettings } from "./settings";
 
 const PANE_ID = "tour";
 const sidecarDirectories = new Set<string>();
@@ -105,7 +106,7 @@ async function writeSidecar(tour: Tour): Promise<string> {
   return path;
 }
 
-async function runTourCli(args: readonly string[], ctx: ExtensionCliCommandContext): Promise<ExtensionCliCommandResult> {
+async function runTourCli(args: readonly string[], ctx: ExtensionCliCommandContext, settings: TourSettings): Promise<ExtensionCliCommandResult> {
   const [subcommand, file, ...extra] = args;
   if (subcommand === "wait") return runWait(args.slice(1), ctx);
   if (subcommand === "answer") return runAnswer(args.slice(1), ctx);
@@ -137,10 +138,16 @@ async function runTourCli(args: readonly string[], ctx: ExtensionCliCommandConte
     return { kind: "exit", code: 0 };
   }
 
+  let settingsArgs: string[] = [];
+  try {
+    settingsArgs = settings.cliArgs();
+  } catch (error) {
+    await writeLines(ctx.stderr, [`warning: could not load guided-review settings: ${error instanceof Error ? error.message : String(error)}`]);
+  }
   const sidecarPath = await writeSidecar(tour);
   setState({ tour, stops, links: index, cursor: initialCursor() });
   await openSession({ repo: ctx.cwd, tourPath: resolve(ctx.cwd, file), tour, fresh });
-  return { kind: "delegate", argv: ["diff", `${tour.base}...${tour.head}`, "--agent-context", sidecarPath, "--agent-notes"] };
+  return { kind: "delegate", argv: ["diff", `${tour.base}...${tour.head}`, ...settingsArgs, "--agent-context", sidecarPath, "--agent-notes"] };
 }
 
 interface NavigableFile {
@@ -673,13 +680,15 @@ function TourPane({ files, theme, actions, keybindings }: ExtensionPaneProps): R
 }
 
 export default function registerGuidedReview(hunk: HunkExtensionAPI) {
+  const settings = new TourSettings();
+  registerSettings(hunk, settings, () => state.tour !== null);
   // Sorting the sidecar alone misses unannotated files Hunk appends after its entries.
   hunk.transformChangeset((changeset) => state.tour
     ? { ...changeset, files: groupFilesByDirectory(changeset.files) } : changeset);
 
   hunk.registerCliCommand(
     { name: "tour", summary: "Check, open, answer, or approve a guided review tour", usage: "check|open|wait|answer|approve <tour.json> ..." },
-    runTourCli,
+    (args, ctx) => runTourCli(args, ctx, settings),
   );
 
   hunk.registerPane({
