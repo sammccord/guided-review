@@ -124,20 +124,22 @@ describe("parse", () => {
 
 describe("approvalBlockers", () => {
   const agree = samples.decision(1, { stop: { ...stopRef, number: 1 } });
-  test.each<{ name: string; verdict: Verdict; count: number; requests: Request[]; answers: Answer[]; expected: string[] }>([
-    { name: "clean", verdict: "approve", count: 1, requests: [agree], answers: [], expected: [] },
-    { name: "request changes", verdict: "request-changes", count: 1, requests: [agree], answers: [], expected: ["verdict is request-changes"] },
-    { name: "discuss", verdict: "discuss", count: 1, requests: [agree], answers: [], expected: ["verdict is discuss"] },
-    { name: "disagree even after a reply", verdict: "approve", count: 1, requests: [{ ...agree, decision: "disagree" }], answers: [answer("q-1")], expected: ["stop 1: disagree"] },
-    { name: "unsure even after a reply", verdict: "approve", count: 1, requests: [{ ...agree, decision: "unsure" }], answers: [answer("q-1")], expected: ["stop 1: unsure"] },
-    { name: "undecided", verdict: "approve", count: 3, requests: [agree], answers: [], expected: ["2 of 3 stops undecided"] },
-    { name: "out-of-range decision cannot fill missing stop", verdict: "approve", count: 1, requests: [samples.decision(1)], answers: [], expected: ["1 of 1 stops undecided"] },
-    { name: "unanswered requests are left to the agent", verdict: "approve", count: 1, requests: [{ ...agree, comment: "Check this" }, samples.ask(2)], answers: [], expected: [] },
-    { name: "latest decision wins by sequence", verdict: "approve", count: 1, requests: [{ ...agree, seq: 2 }, { ...agree, id: "q-3", seq: 1, decision: "disagree" }], answers: [answer("q-3")], expected: [] },
-    { name: "answered concerns are left to the agent", verdict: "approve", count: 1, requests: [{ ...agree, comment: "But why?" }, samples.question(2), samples.comment(3)], answers: [answer("q-1"), answer("q-2"), answer("q-3")], expected: [] },
-    { name: "all blockers", verdict: "discuss", count: 3, requests: [{ ...agree, decision: "disagree" }, samples.decision(2, { decision: "unsure" })], answers: [], expected: ["verdict is discuss", "stop 1: disagree", "stop 2: unsure", "1 of 3 stops undecided"] },
-  ])("$name", ({ verdict, count, requests, answers, expected }) => {
-    expect(approvalBlockers(verdict, count, mailbox(requests, answers))).toEqual(expected);
+  test.each<{ name: string; verdict: Verdict; requests: Request[]; answers: Answer[]; expected: string[] }>([
+    { name: "clean", verdict: "approve", requests: [agree], answers: [], expected: [] },
+    { name: "silence is agreement", verdict: "approve", requests: [], answers: [], expected: [] },
+    { name: "request changes", verdict: "request-changes", requests: [agree], answers: [], expected: ["verdict is request-changes"] },
+    { name: "discuss", verdict: "discuss", requests: [agree], answers: [], expected: ["verdict is discuss"] },
+    { name: "disagree even after a reply", verdict: "approve", requests: [{ ...agree, decision: "disagree" }], answers: [answer("q-1")], expected: ["stop 1: disagree"] },
+    { name: "unsure without a reply", verdict: "approve", requests: [{ ...agree, decision: "unsure" }], answers: [], expected: [] },
+    { name: "unsure after a reply", verdict: "approve", requests: [{ ...agree, decision: "unsure" }], answers: [answer("q-1")], expected: [] },
+    { name: "stops without decisions do not block", verdict: "approve", requests: [agree], answers: [], expected: [] },
+    { name: "unanswered requests are left to the agent", verdict: "approve", requests: [{ ...agree, comment: "Check this" }, samples.ask(2)], answers: [], expected: [] },
+    { name: "later agree overrides disagree by sequence", verdict: "approve", requests: [{ ...agree, seq: 2 }, { ...agree, id: "q-3", seq: 1, decision: "disagree" }], answers: [answer("q-3")], expected: [] },
+    { name: "later disagree overrides agree by sequence", verdict: "approve", requests: [{ ...agree, id: "q-3", seq: 2, decision: "disagree" }, agree], answers: [], expected: ["stop 1: disagree"] },
+    { name: "answered concerns are left to the agent", verdict: "approve", requests: [{ ...agree, comment: "But why?" }, samples.question(2), samples.comment(3)], answers: [answer("q-1"), answer("q-2"), answer("q-3")], expected: [] },
+    { name: "all blockers", verdict: "discuss", requests: [{ ...agree, decision: "disagree" }, samples.decision(2, { decision: "unsure" })], answers: [], expected: ["verdict is discuss", "stop 1: disagree"] },
+  ])("$name", ({ verdict, requests, answers, expected }) => {
+    expect(approvalBlockers(verdict, mailbox(requests, answers))).toEqual(expected);
   });
 });
 
@@ -293,14 +295,14 @@ describe("agent status and status text", () => {
     expect(agentStatus(stale, now)).toEqual({ kind: "away", sinceMs: 180_000 });
   });
 
-  test("statusText summarises decisions, waiting count, and the agent", () => {
+  test("statusText summarises waiting count and the agent", () => {
     const box = mailbox(
       [request(1, { kind: "decision", decision: "disagree", comment: "" }), request(2, { kind: "ask" })],
       [answer("q-2")],
       { heartbeat: { pid: 1, until: "2026-10-14T09:57:00Z" } },
     );
-    expect(statusText(box, 6, now)).toBe("Decided 1/6 · 1 waiting · agent away 3m");
-    expect(statusText(emptyMailbox(), 6, now)).toBe("Decided 0/6 · 0 waiting · no agent yet");
+    expect(statusText(box, now)).toBe("1 waiting · agent away 3m");
+    expect(statusText(emptyMailbox(), now)).toBe("0 waiting · no agent yet");
   });
 });
 

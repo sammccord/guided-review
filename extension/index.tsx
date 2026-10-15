@@ -608,7 +608,7 @@ function TourPane({ files, theme, actions, keybindings }: ExtensionPaneProps): R
           <text content={tour.verdict.toUpperCase()} fg={verdictColor(tour.verdict, theme)} attributes={TextAttributes.BOLD} />
         </box>
         <box style={{ paddingLeft: 1, paddingRight: 1 }}>
-          <text content={`${frame ? `${frame} ` : ""}${statusText(mailbox, stops.length, Date.now())}`} fg={theme.muted} wrapMode="word" />
+          <text content={`${frame ? `${frame} ` : ""}${statusText(mailbox, Date.now())}`} fg={theme.muted} wrapMode="word" />
         </box>
         {tour.stack ? <StackBlock stack={tour.stack} theme={theme} /> : null}
         <box style={{ marginTop: 1, paddingLeft: 1, paddingRight: 1 }}>
@@ -714,7 +714,6 @@ export default function registerGuidedReview(hunk: HunkExtensionAPI) {
 
   const access: TourAccess = {
     currentStop: () => (state.cursor.current >= 0 ? state.stops[state.cursor.current]! : null),
-    stopCount: () => state.stops.length,
   };
   registerQa(hunk, access);
 }

@@ -29,7 +29,6 @@ import {
   reviewerIdleMs,
   statusText,
   transcript,
-  tourStops,
   type Anchor,
   type Decision,
   type Mailbox,
@@ -172,7 +171,7 @@ async function finalPayload(boxes: readonly TourBox[], ends: readonly Exclude<Re
   const approval = await Promise.all(boxes.map(async ({ tour, box }) => {
     const loaded = await readTour(tour, box.session?.repo);
     if (box.session?.tourFingerprint) assertSessionTour(box.session, loaded);
-    const blockers = approvalBlockers(loaded.verdict, tourStops(loaded).length, box);
+    const blockers = approvalBlockers(loaded.verdict, box);
     return { tour, eligible: blockers.length === 0, blockers };
   }));
   return {
@@ -317,7 +316,7 @@ export async function runApprove(args: readonly string[], ctx: ExtensionCliComma
     const session = box.session;
     if (!session || !reviewEnd(box, pidAlive)) throw new Error("review has not ended; finish or close Hunk first");
     tour = await pinTourRefs(session.repo, tour);
-    const blockers = approvalBlockers(tour.verdict, tourStops(tour).length, box);
+    const blockers = approvalBlockers(tour.verdict, box);
     if (blockers.length) throw new Error(`approval blocked:\n${blockers.join("\n")}`);
     const target = tour.url ? parsePullRequestUrl(tour.url) : null;
     if (!target) throw new Error("tour has no PR url");
@@ -604,7 +603,6 @@ export async function requestComment(entry: TourStop): Promise<void> {
 
 export interface TourAccess {
   currentStop(): TourStop | null;
-  stopCount(): number;
 }
 
 function currentStopRef(access: TourAccess): StopRef | null {
@@ -681,22 +679,10 @@ export async function requestDecision(entry: TourStop): Promise<void> {
   if (host) await decide(host, entry);
 }
 
-async function finish(ctx: ExtensionCommandContext, access: TourAccess) {
+async function finish(ctx: ExtensionCommandContext) {
   if (!state.session) {
     ctx.notify(NO_TOUR, "warning");
     return;
-  }
-  const total = access.stopCount();
-  const undecided = total - decisions(state.box).size;
-  const dialogs = ctx.dialogs as Partial<ExtensionCommandContext["dialogs"]>;
-  if (undecided > 0 && dialogs.confirm) {
-    const confirmed = await dialogs.confirm({
-      title: `${undecided} of ${total} stops undecided`,
-      body: "Undecided stops will not reach the review draft. Finish anyway?",
-      confirmLabel: "Finish",
-      cancelLabel: "Keep reviewing",
-    });
-    if (!confirmed) return;
   }
   await writeSession({ finishedAt: now() });
   if (state.paths) {
@@ -704,7 +690,7 @@ async function finish(ctx: ExtensionCommandContext, access: TourAccess) {
     setState({ ...state, box });
     await syncPlaceholders(box);
   }
-  ctx.notify("Review finished. The agent will draft the review from your decisions.");
+  ctx.notify("Review finished. The agent will draft the review from your notes.");
 }
 
 function close() {
@@ -718,7 +704,7 @@ let poller: ReturnType<typeof setInterval> | null = null;
 let host: ExtensionEventContext | null = null;
 let seenAnswers: Set<string> | null = null;
 
-async function poll(access: TourAccess) {
+async function poll() {
   const { paths } = state;
   if (!paths || !host) return;
   const box = await readMailbox(paths);
@@ -726,7 +712,7 @@ async function poll(access: TourAccess) {
   // Hunk 0.22 hosts have no status line; the Tour pane shows the same text there.
   (host as Partial<ExtensionEventContext>).statusLine?.set({
     id: STATUS_ID,
-    spans: [{ text: statusText(box, access.stopCount(), Date.now()), tone: "muted" }],
+    spans: [{ text: statusText(box, Date.now()), tone: "muted" }],
   });
   if (seenAnswers) {
     for (const request of box.requests) {
@@ -737,16 +723,16 @@ async function poll(access: TourAccess) {
   void syncPlaceholders(box);
 }
 
-function startPolling(ctx: ExtensionEventContext, access: TourAccess) {
+function startPolling(ctx: ExtensionEventContext) {
   host = ctx;
   if (poller || !state.paths) return;
-  poller = setInterval(() => void poll(access), TUI_POLL_MS);
-  void poll(access);
+  poller = setInterval(() => void poll(), TUI_POLL_MS);
+  void poll();
 }
 
 export function registerQa(hunk: HunkExtensionAPI, access: TourAccess) {
-  hunk.on("changeset_loaded", (_payload, ctx) => startPolling(ctx, access));
-  hunk.on("session_reload", (_payload, ctx) => startPolling(ctx, access));
+  hunk.on("changeset_loaded", (_payload, ctx) => startPolling(ctx));
+  hunk.on("session_reload", (_payload, ctx) => startPolling(ctx));
   hunk.on("command_executed", touchActivity);
   hunk.on("selection_changed", touchActivity);
   hunk.on("file_viewed", touchActivity);
@@ -761,5 +747,5 @@ export function registerQa(hunk: HunkExtensionAPI, access: TourAccess) {
   });
   hunk.registerCommand({ id: "ask", title: "Ask the agent", key: QA_KEYS.ask }, (ctx) => ask(ctx, access));
   hunk.registerCommand({ id: "decide", title: "Decide this stop", key: QA_KEYS.decide }, (ctx) => decide(ctx, access.currentStop()));
-  hunk.registerCommand({ id: "finish", title: "Finish review", key: QA_KEYS.finish }, (ctx) => finish(ctx, access));
+  hunk.registerCommand({ id: "finish", title: "Finish review", key: QA_KEYS.finish }, (ctx) => finish(ctx));
 }
