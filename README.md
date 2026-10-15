@@ -110,7 +110,7 @@ The same stops also appear in the diff as inline tour notes:
 	guided review of https://github.com/<owner>/<repo>/pull/<number>
 	```
 
-	The agent works in a clone of the repository under review. Start it from inside that clone, or it looks for one or runs `gh repo clone`. Add a stop budget to change the depth, such as `quick`, `deep`, or `12 stops`.
+	The agent works in a clone of the repository under review. Start it from inside that clone, or it looks for one or runs `gh repo clone`. Add a stop budget to change the depth, such as `quick`, `deep`, or `12 stops`. Add `summary` or `summary=<path>` to get a shareable markdown summary of the tour, your decisions, and the Q&A when the review ends. See [Sharing a summary after the review](docs/how-it-works.md#sharing-a-summary-after-the-review).
 
 To update the skill, run `npx skills update -g`. To remove it, run `npx skills remove guided-review -g`. [docs/install.md](docs/install.md) covers installing from a clone, telemetry, and troubleshooting.
 

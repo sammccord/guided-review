@@ -52,6 +52,31 @@ The agent's loop is two commands. `hunk tour wait` writes its heartbeat, polls t
 
 `wait` treats the review as over when `session.json` carries `finishedAt`, set by **Finish review**, or `closedAt`, set when Hunk shuts down, or when the Hunk process id is no longer alive. Reopening an unchanged tour writes a fresh session record in the same review generation and preserves its decisions and answers. A changed repository, PR/layer, base/head, stop order, or tour content starts a new generation; `tour open <tour.json> --fresh` (also accepted by `open-tour.sh`) does so explicitly. Previous generations and legacy mailboxes stay on disk but are not imported into the new review. Request IDs include the generation, so a delayed answer cannot address a new review's request. The agent must never replay historical live notes unless the reviewer explicitly requests an import. An `agree` with no comment needs no reply, so `wait` never returns it as pending. It still appears in the final transcript as `noted`. Hunk 0.22 has no extension status line, so the status text sits at the top of the **Tour** pane, as in `1 waiting · agent listening`. On hosts that have a status line, it is also set there.
 
+## Sharing a summary after the review
+
+A tour lives in Hunk, and its decisions and Q&A sit in a mailbox under `.git`. To hand the outcome to someone who was not in the session, ask for a summary when you request the review:
+
+```text
+guided review of https://github.com/<owner>/<repo>/pull/<number> with summary
+guided review of https://github.com/<owner>/<repo>/pull/<number> summary=~/reviews/pr-42.md
+```
+
+The option is off by default. `summary`, `share summary`, or `summary=on` turns it on with the default path, which is the review's `tourPath` with `.json` replaced by `.md`, as in `.git/guided-review/pr-42.tour.md`. `summary=<path>` names a file for a single review. For a stack, `<path>` is a directory, and each layer gets its own `<slug>.md` there.
+
+The agent writes the file only when `tour wait` returns `finished` or `closed`. An `away` review has not concluded, so it gets no summary. The agent builds the file from the tour JSON and the final payload's `decisions` and `transcript`. It writes the file after its review draft and before asking to approve. If you then confirm an approval, it updates the Outcome line. The reply ends with the file's absolute path.
+
+Each file holds:
+
+- A header with the PR link, the `base...head` range, the verdict, and the outcome: approved at a head, not approved with the reason, or ended without a decision.
+- The intent statement, the tour summary, and the stack layers, with the reviewed layer marked.
+- One section per track: its summary and a table of its stops with number, kind, title, `path:line`, and your latest decision and comment. Each stop's body and ask sit in a collapsed `<details>` block.
+- The reviewer discussion: each question, note, and decision comment with the agent's answer, plus links to comments posted to the PR.
+- The scope: what the agent checked, what it did not, and the files it skipped.
+
+Stop numbers match the numbers Hunk shows, and `[[id]]` links become `#<n> <title>`. A stop you did not decide has an empty reviewer cell, because silence means agreement with the agent's framing. The file leaves out secrets, local paths, the worktree, and the `cleanup` command. It is plain GitHub-flavored markdown, so it can be pasted into a PR comment, a ticket, or chat.
+
+The agent posts the summary nowhere. Sharing it is your decision. The review's `cleanup` command does not delete it. With the default path, it stays in `.git/guided-review/` after the worktree is removed. Pass `summary=<path>` to keep it somewhere easier to find.
+
 ## Why a tour instead of GitHub review comments
 
 The agent does not post its audit findings to GitHub on its own. That is a deliberate choice.

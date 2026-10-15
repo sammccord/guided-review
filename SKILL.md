@@ -11,6 +11,7 @@ The reviewer's time is the scarce resource. Do the exhaustive reading yourself, 
 
 - **Target.** A PR URL, a PR number, or a branch name, plus an optional base ref. Or one or more tour JSON files someone shared, one per stack layer; see [Shared tours](#shared-tours).
 - **Stop budget.** Optional. The user may name a number ("12 stops", "stops=30") or a depth: `quick` is about 8, `standard` about 20, `deep` about 40. Default `standard`. The budget counts stops, not findings. Fill it with findings first, then with `inspect` stops in order of significance. Fall short only when the diff runs out of significant changes, and say so in the report. Never pad with nits or Mechanical files to reach it.
+- **Summary.** Optional, off by default. The user turns it on with "summary", "share summary", "summary=on", or "summary=<path>". When on, step 10 writes a shareable markdown summary of each tour after the review concludes; see [Shareable summary](#shareable-summary). The default path is the review's `tourPath` with `.json` replaced by `.md`. A given `<path>` is a file for a single review, or a directory for a stack, which gets one `<slug>.md` per layer.
 
 `<skill>` below means the directory containing this file.
 
@@ -188,3 +189,54 @@ hunk --extension <skill> tour approve <tour.json> --body '<short summary>'
 ```
 
 Never approve without that yes. For a stack, get confirmation for each layer's PR and head, then run one approval per confirmed layer tour. The CLI rechecks the verdict, any stop whose latest decision is disagree, and the current PR head. It refuses any blocker. It records approval in `approved.json` and avoids reposting an approval at the same head.
+
+### Shareable summary
+
+Only when the Summary input is on and step 9 ended with `finished` or `closed`. Skip it on `away`; the review has not concluded. Write it after the review draft and before asking to approve, then rewrite its Outcome line if an approval is posted.
+
+Build it from the tour JSON and the `finished` or `closed` payload, nothing else. One file per tour. It must read well on its own, pasted into a PR comment, a ticket, or chat, by someone who never opened Hunk:
+
+```markdown
+# Guided review: <title>
+
+<url> · `<base short sha>...<head short sha>` · Verdict: **<verdict>**
+Outcome: <approved at <sha> | not approved: <one-line reason> | review ended without a decision>
+
+## Intent
+<the intent statement from step 2>
+
+## Summary
+<the tour summary bullets>
+
+## Stack
+<one line per layer: PR, title, marker on the reviewed layer; omit when there is no stack>
+
+## Tracks
+### 1. <track title>
+<track summary bullets>
+
+| # | Kind | Stop | Location | Reviewer |
+|---|------|------|----------|----------|
+| 1 | blocker | <title> | `path:line` | disagree: <comment> |
+
+<details><summary>#1 <title></summary>
+
+<body bullets>
+
+**Ask:** <ask>
+</details>
+
+## Reviewer discussion
+<each transcript item in order: the stop it was made at, the reviewer's text, your answer; posted PR comments with their GitHub links>
+
+## Scope
+**Checked:** <scope.checked bullets>
+**Unchecked:** <scope.unchecked bullets>
+**Skipped:** <skipped entries with reasons>
+```
+
+- Number stops in tour order across tracks, the same numbers Hunk shows. Rewrite `[[id]]` links as `#<n> <title>`.
+- The Reviewer column holds the latest decision and its comment. Leave it empty where the reviewer made none; silence means agreement, so do not write "agree".
+- Omit an empty section, except Scope. A tour with no stops says so in one line under Tracks.
+- Include no secrets, tokens, or local paths. The worktree and `cleanup` command stay out of the file.
+- Write the file with your file tool, then report its absolute path in the reply. It is not part of `cleanup`, so it survives the worktree's removal. Post it nowhere; sharing is the reviewer's call.
