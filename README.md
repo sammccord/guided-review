@@ -176,6 +176,7 @@ Click **Post to PR** on the current stop to have the agent reword it for the aut
 
 - [Install guided-review](docs/install.md) covers each agent, manual installs, use without an agent, upgrades, removal, and troubleshooting.
 - [Tour file format](docs/tour-format.md) lists every field of a tour file and every rule `hunk tour check` enforces.
+- [`hunk tour` command reference](docs/cli.md) lists every subcommand's flags, output, exit status, and errors, plus the mailbox files.
 - [How guided-review works](docs/how-it-works.md) explains the pipeline, the design choices, and the known limits.
 - [Changelog](CHANGELOG.md).
 - [`core/README.md`](core/README.md) describes the library's modules.

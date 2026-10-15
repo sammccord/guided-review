@@ -130,6 +130,10 @@ Because `tour check` and `tour open` run `git diff <base>...<head>` in the curre
 
 	Add `--print` to check the tour and print the command without opening a terminal.
 
+Reopening an unchanged tour resumes its decisions and questions. To start over, add `--fresh` to `tour open` or `open-tour.sh`.
+
+Before `hunk tour wait` writes a heartbeat for this review, the **Tour** pane reads `<n> waiting · no agent yet`. Requests from notes, `Q`, `V`, and **Post to PR** wait in the mailbox. You can answer them yourself with `hunk tour answer` while Hunk is open. The [command reference](cli.md) lists every subcommand.
+
 To load the extension in every Hunk session without `--extension`, install it into Hunk:
 
 ```bash
@@ -232,3 +236,23 @@ Hunk drops the pane when the terminal is too narrow for the sidebar, the diff, a
 Errors stop `tour check` with status 1, and `tour open` refuses to open the tour. Warnings start with `warning:` and never block. The usual errors are an anchor outside every hunk, an anchor that runs past the end of its hunk, a path that is not in the diff, and an unknown `[[id]]` link. The usual warnings are a stop longer than 20 lines and prose that is not `- ` bullet lines. [Tour file format](tour-format.md) lists every rule.
 
 If you run `tour check` in a directory where `base` and `head` do not resolve, it prints `git diff <base>...<head> failed in <directory>: ` followed by git's own message. Run `tour check` from the repository the tour reviews.
+
+### `tour changed or has no saved identity; reopen the tour before answering or approving`
+
+`tour wait`, `tour answer`, and `tour approve` compare the tour file with the one Hunk opened. Editing the tour, or moving a ref that `base` or `head` names, breaks the match. Reopen the tour with `tour open` or `open-tour.sh`. That starts a new review.
+
+### `the Hunk session for this tour (pid <pid>) is not running; reopen the tour`
+
+`tour answer` posts into the running Hunk session that opened the tour. Reopen the tour, then answer again. A request that was already answered reports `already-answered` and is not posted twice.
+
+### `tour has no PR url`
+
+**Post to PR** and approval need the tour's `url` field set to a PR URL such as `https://<host>/<owner>/<repo>/pull/<number>`. Add it, reopen the tour, and try again. `gh` must be logged in to that host. Check with `gh auth status --hostname <host>`.
+
+### `review has not ended; finish or close Hunk first`
+
+`tour approve` runs only after the review ends. Press `F` in Hunk to finish the review, or quit Hunk.
+
+### `PR head moved from <head> to <sha>; re-run the review`
+
+The PR got new commits after the tour was written. An approval would cover code nobody reviewed. Run the review again on the new head.

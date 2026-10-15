@@ -95,7 +95,7 @@ The top-level object.
 | --- | --- | --- | --- |
 | `version` | number | yes | Must be `1` (`TOUR_VERSION`). |
 | `title` | string | yes | Non-empty. |
-| `url` | string | no | Non-empty when present. A PR URL is required for **Post to PR**. |
+| `url` | string | no | Non-empty when present. **Post to PR** and `tour approve` need a PR URL such as `https://<host>/<owner>/<repo>/pull/<number>`. |
 | `base` | string | yes | Non-empty. A commit SHA or ref that `git` resolves in the directory where `tour check` runs. |
 | `head` | string | yes | Non-empty. Same as `base`. The reviewed diff is `git diff <base>...<head>`. |
 | `verdict` | string | yes | One of `approve`, `request-changes`, `discuss` (`VERDICTS`). |
@@ -132,7 +132,7 @@ hunk --extension <guided-review> tour check <tour.json>
 | --- | --- |
 | `0` | No errors. Prints warnings, if any, to stderr, each prefixed with `warning: `. Then prints `ok: <stops> stops in <tracks> tracks across <files> files, verdict <verdict>` to stdout. A tour with a `stack` adds ` · stack #<number> layer <position>/<layers>`. |
 | `1` | The file cannot be read, is not JSON, fails `parseTour`, the `git diff` fails, or an anchor fails. Prints one error per line to stderr. |
-| `2` | Usage error. Prints `usage: hunk tour check\|open <tour.json>`. |
+| `2` | Usage error. Prints the `hunk tour` usage text listed in the [command reference](cli.md). |
 
 `tour open` runs the same checks before it opens Hunk. Errors block it. Warnings do not.
 
