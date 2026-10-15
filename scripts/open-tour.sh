@@ -2,15 +2,17 @@
 set -euo pipefail
 
 usage() {
-  echo "usage: $(basename "$0") [--print] <repo-or-worktree-dir> <tour.json>" >&2
+  echo "usage: $(basename "$0") [--cursor] [--print] <repo-or-worktree-dir> <tour.json>" >&2
   exit 2
 }
 
 print_only=0
+cursor=0
 positional=()
 for arg in "$@"; do
   case "$arg" in
     --print) print_only=1 ;;
+    --cursor) cursor=1 ;;
     -h|--help) usage ;;
     *) positional+=("$arg") ;;
   esac
@@ -37,6 +39,27 @@ DIR="$(abspath "${positional[0]}")"
 TOUR="$(abspath "${positional[1]}")"
 LABEL="review $(basename "$DIR")"
 EXT="$(abspath "$(dirname "$0")/..")"
+
+if [[ $cursor -eq 1 ]]; then
+  command -v node >/dev/null 2>&1 || { echo "Node.js is required for Cursor tours" >&2; exit 1; }
+  [[ -f "$EXT/cursor-extension/dist/check.js" ]] || { echo "Build the Cursor extension first: cd $(shquote "$EXT") && bun install && bun run build:cursor" >&2; exit 1; }
+  node "$EXT/cursor-extension/dist/check.js" "$DIR" "$TOUR"
+  if [[ $print_only -eq 0 ]]; then
+    command -v cursor >/dev/null 2>&1 || { echo "Install Cursor's 'cursor' shell command first" >&2; exit 1; }
+    WORKSPACE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/guided-review-cursor.XXXXXX")"
+    WORKSPACE="$WORKSPACE_DIR/tour.code-workspace"
+    node - "$DIR" "$TOUR" "$WORKSPACE" <<'JS'
+const fs = require('node:fs');
+const [repo, tour, workspace] = process.argv.slice(2);
+fs.writeFileSync(workspace, JSON.stringify({ folders: [{ path: repo }], settings: { 'guidedReview.tourFile': tour } }, null, 2) + '\n');
+JS
+    cursor --new-window "$WORKSPACE"
+    echo "Opened Cursor tour workspace: $WORKSPACE"
+    echo "Requires the Guided Review extension; select 'Move Plan to Right Sidebar…' and then 'New Secondary Side Bar entry' once."
+  fi
+  echo "Tour command: $(shquote "$EXT/scripts/open-tour.sh") --cursor $(shquote "$DIR") $(shquote "$TOUR")"
+  exit 0
+fi
 
 (cd "$DIR" && hunk --extension "$EXT" tour check "$TOUR")
 

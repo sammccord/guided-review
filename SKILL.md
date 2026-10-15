@@ -1,6 +1,6 @@
 ---
 name: guided-review
-description: Audit a pull request, a stack of pull requests, or a branch, pick the changes that need human judgment, and open them as ordered, annotated tours of small stops grouped into tracks in the Hunk diff viewer, one tour per stack layer. Use for "guided review", "tour this PR", "review tour", "walk me through this PR", or a PR link or branch name with a request to review it in hunk. Not for posting review comments to GitHub.
+description: Audit a pull request, a stack of pull requests, or a branch, pick the changes that need human judgment, and open them as ordered, annotated tours of small stops grouped into tracks in Hunk or natively in Cursor, one tour per stack layer. Use for "guided review", "tour this PR", "review tour", "walk me through this PR", or a PR link or branch name with a request to review it in Hunk or Cursor. Not for posting review comments to GitHub.
 ---
 
 # Guided review
@@ -11,10 +11,11 @@ The reviewer's time is the scarce resource. Do the exhaustive reading yourself, 
 
 - **Target.** A PR URL, a PR number, or a branch name, plus an optional base ref.
 - **Stop budget.** Optional. The user may name a number ("12 stops", "stops=30") or a depth: `quick` is about 8, `standard` about 20, `deep` about 40. Default `standard`. The budget counts stops, not findings. Fill it with findings first, then with `inspect` stops in order of significance. Fall short only when the diff runs out of significant changes, and say so in the report. Never pad with nits or Mechanical files to reach it.
+- **Renderer.** Use Cursor when requested; otherwise use Hunk. Cursor uses the same tour JSON with a native Tour Plan, inline comments, and code lenses.
 
 `<skill>` below means the directory containing this file.
 
-Requires `git`, `python3`, `hunk` 0.22 or newer, and `gh` authenticated for the PR's host (`gh auth status --hostname <host>`). GitHub Enterprise works because nothing goes through `hunk gh`.
+Requires `git`, `python3`, and `gh` authenticated for the PR's host (`gh auth status --hostname <host>`). Hunk tours require `hunk` 0.22 or newer. Cursor tours require Node.js, a built and installed [Cursor extension](cursor-extension/README.md), and the `cursor` shell command. GitHub Enterprise works because nothing goes through `hunk gh`.
 
 ## 1. Prepare the worktree
 
@@ -118,11 +119,15 @@ hunk --extension <skill> tour check <tour.json>
 
 It validates the schema and confirms every anchor falls inside a hunk of `base...head`. Fix every reported stop and rerun until it prints `ok`. Then clear every warning: split oversized stops and rewrite paragraphs as bullets.
 
+For Cursor, validate without Hunk using `node <skill>/cursor-extension/dist/check.js <worktree> <tour.json>`. It uses the same core checks. Build with `bun run build:cursor` from the skill clone first if needed; do not silently fall back to the TUI when Cursor was requested.
+
 ## 8. Open it
 
 ```bash
 <skill>/scripts/open-tour.sh <worktree> <tour.json>
 ```
+
+For Cursor, use `<skill>/scripts/open-tour.sh --cursor <worktree> <tour.json>` instead. It validates the tour and opens a temporary Cursor workspace with that tour configured. Run once per stack layer, bottom first. The installed extension opens the Tour Plan and inline stops automatically after workspace trust. Use **Guided Review: Move Plan to Right Sidebar…** once to place the plan on the right; use next/previous commands, code lenses, and linked stops to navigate. No terminal or Hunk is needed. The remaining terminal notes in this section apply only to Hunk.
 
 Run it once per review. For a stack, open the layers bottom first; each gets its own terminal tab labelled `review pr-<n>`.
 

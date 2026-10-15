@@ -2,22 +2,24 @@
 set -euo pipefail
 
 usage() {
-  echo "usage: $(basename "$0") [--print] [--keep]" >&2
+  echo "usage: $(basename "$0") [--cursor] [--print] [--keep]" >&2
   exit 2
 }
 
 print_only=0
 keep=0
+cursor=0
 for arg in "$@"; do
   case "$arg" in
     --print) print_only=1 ;;
     --keep) keep=1 ;;
+    --cursor) cursor=1 ;;
     *) usage ;;
   esac
 done
 
 command -v git >/dev/null 2>&1 || { echo "git is required" >&2; exit 1; }
-command -v hunk >/dev/null 2>&1 || {
+[[ $cursor -eq 1 ]] || command -v hunk >/dev/null 2>&1 || {
   echo "hunk is required: curl -fsSL https://hunk.dev/install.sh | sh, brew install hunk, or npm i -g hunkdiff" >&2
   echo "See https://github.com/modem-dev/hunk#install" >&2
   exit 1
@@ -57,7 +59,11 @@ HEAD="$(git -C "$REPO" rev-parse HEAD)"
 sed -e "s/__BASE__/$BASE/" -e "s/__HEAD__/$HEAD/" "$DEMO/tour.template.json" >"$TOUR"
 
 # open-tour.sh runs the check again and prints its ok line, so print this one only on failure.
-check="$(cd "$REPO" && hunk --extension "$ROOT" tour check "$TOUR" 2>&1)" || true
+if [[ $cursor -eq 1 ]]; then
+  check="$(node "$ROOT/cursor-extension/dist/check.js" "$REPO" "$TOUR" 2>&1)" || true
+else
+  check="$(cd "$REPO" && hunk --extension "$ROOT" tour check "$TOUR" 2>&1)" || true
+fi
 if [[ "$check" != ok:* || "$check" == *$'\n'* ]]; then
   echo "$check" >&2
   echo "demo tour check reported errors or warnings" >&2
@@ -66,8 +72,20 @@ fi
 
 open_args=()
 [[ $print_only -eq 1 ]] && open_args+=(--print)
+[[ $cursor -eq 1 ]] && open_args+=(--cursor)
 "$ROOT/scripts/open-tour.sh" "${open_args[@]+"${open_args[@]}"}" "$REPO" "$TOUR"
 
+if [[ $cursor -eq 1 ]]; then
+  cat <<'EOF'
+
+What to try in Cursor:
+  Guided Review: Move Plan to Right Sidebar… → New Secondary Side Bar entry
+  Click a stop in Tour Plan; read its native inline comment and decision.
+  Ctrl+Alt+Right / Left: next / previous stop (in tour snapshots)
+  Click a [[link]], then Guided Review: Back After Link.
+  Mark reviewed in the code lens; Guided Review: Show Stop Diff opens a native diff.
+EOF
+else
 cat <<'EOF'
 
 What to try in hunk:
@@ -78,6 +96,7 @@ What to try in hunk:
   a      toggle inline notes
   q      quit
 EOF
+fi
 
 echo
 if [[ $print_only -eq 1 && $keep -eq 0 ]]; then

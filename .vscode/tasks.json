@@ -1,0 +1,9 @@
+{
+  "version": "2.0.0",
+  "tasks": [{
+    "label": "build:cursor",
+    "type": "shell",
+    "command": "node cursor-extension/build.mjs",
+    "problemMatcher": []
+  }]
+}

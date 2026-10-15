@@ -1,0 +1,56 @@
+{
+  "name": "guided-review-cursor",
+  "displayName": "Guided Review",
+  "description": "Native review tours in Cursor: a tour plan, inline comments, code lenses, and Git revision diffs.",
+  "version": "0.1.0",
+  "publisher": "guided-review",
+  "license": "MIT",
+  "repository": { "type": "git", "url": "https://github.com/sammccord/guided-review.git" },
+  "engines": { "vscode": "^1.96.0" },
+  "categories": ["Other"],
+  "main": "./dist/extension.js",
+  "activationEvents": ["onUri", "onStartupFinished"],
+  "extensionKind": ["workspace"],
+  "capabilities": { "untrustedWorkspaces": { "supported": false }, "virtualWorkspaces": false },
+  "contributes": {
+    "configuration": {
+      "title": "Guided Review",
+      "properties": {
+        "guidedReview.tourFile": { "type": "string", "default": "", "scope": "window", "description": "Tour JSON to open when this trusted workspace starts. Relative paths resolve from the first workspace folder." }
+      }
+    },
+    "commands": [
+      { "command": "guidedReview.open", "title": "Guided Review: Open Tour…", "icon": "$(folder-opened)" },
+      { "command": "guidedReview.close", "title": "Guided Review: Close Tour", "icon": "$(close)" },
+      { "command": "guidedReview.next", "title": "Guided Review: Next Stop", "icon": "$(arrow-down)" },
+      { "command": "guidedReview.prev", "title": "Guided Review: Previous Stop", "icon": "$(arrow-up)" },
+      { "command": "guidedReview.nextTrack", "title": "Guided Review: Next Track" },
+      { "command": "guidedReview.prevTrack", "title": "Guided Review: Previous Track" },
+      { "command": "guidedReview.back", "title": "Guided Review: Back After Link", "icon": "$(arrow-left)" },
+      { "command": "guidedReview.restart", "title": "Guided Review: Restart Tour" },
+      { "command": "guidedReview.toggleReviewed", "title": "Guided Review: Toggle Stop Reviewed", "icon": "$(check)" },
+      { "command": "guidedReview.showDiff", "title": "Guided Review: Show Stop Diff", "icon": "$(diff)" },
+      { "command": "guidedReview.movePlan", "title": "Guided Review: Move Plan to Right Sidebar…", "icon": "$(layout-sidebar-right)" }
+    ],
+    "viewsContainers": {
+      "activitybar": [{ "id": "guidedReview", "title": "Guided Review", "icon": "media/tour.svg" }]
+    },
+    "views": { "guidedReview": [{ "id": "guidedReview.plan", "name": "Tour Plan", "contextualTitle": "Guided Review" }] },
+    "viewsWelcome": [{ "view": "guidedReview.plan", "contents": "Open an agent-generated tour to review its tracks and code stops.\n[Open Tour](command:guidedReview.open)\n[Move Plan to Right Sidebar…](command:guidedReview.movePlan)", "when": "!guidedReview.active" }],
+    "menus": {
+      "view/title": [
+        { "command": "guidedReview.open", "when": "view == guidedReview.plan", "group": "navigation@1" },
+        { "command": "guidedReview.prev", "when": "view == guidedReview.plan && guidedReview.active", "group": "navigation@2" },
+        { "command": "guidedReview.next", "when": "view == guidedReview.plan && guidedReview.active", "group": "navigation@3" },
+        { "command": "guidedReview.showDiff", "when": "view == guidedReview.plan && guidedReview.active", "group": "tour@1" },
+        { "command": "guidedReview.movePlan", "when": "view == guidedReview.plan", "group": "tour@2" },
+        { "command": "guidedReview.close", "when": "view == guidedReview.plan && guidedReview.active", "group": "tour@3" }
+      ],
+      "view/item/context": [{ "command": "guidedReview.toggleReviewed", "when": "view == guidedReview.plan && viewItem == tourStop", "group": "inline" }]
+    },
+    "keybindings": [
+      { "command": "guidedReview.next", "key": "ctrl+alt+right", "when": "guidedReview.active && resourceScheme == guided-review && !inputFocus" },
+      { "command": "guidedReview.prev", "key": "ctrl+alt+left", "when": "guidedReview.active && resourceScheme == guided-review && !inputFocus" }
+    ]
+  }
+}

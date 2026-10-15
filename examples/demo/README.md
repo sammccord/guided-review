@@ -8,6 +8,8 @@ examples/demo/run.sh --print       # check the tour and print the Hunk command o
 examples/demo/run.sh --print --keep  # keep the temp repo so you can run that command
 ```
 
+For the native Cursor renderer, [build and install the extension](../../cursor-extension/README.md), then run `examples/demo/run.sh --cursor`. Add `--print --keep` to validate and keep the fixture without opening Cursor. This path needs Git and Node.js, not Hunk.
+
 Requires `git` and `hunk` 0.22.0 or newer.
 
 The script builds a git repository in a temp directory with two commits. The first commit, from `repo-base/`, adds a small TypeScript retry helper and token bucket. The second, from `repo-change/`, adds jitter, a `shouldRetry` predicate, and an injectable clock. The script fills `tour.template.json` with the two commit SHAs, runs `hunk tour check`, and opens the tour with `scripts/open-tour.sh`.

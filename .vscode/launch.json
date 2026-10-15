@@ -1,0 +1,14 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Guided Review in Cursor",
+      "type": "extensionHost",
+      "request": "launch",
+      "runtimeExecutable": "${execPath}",
+      "args": ["--extensionDevelopmentPath=${workspaceFolder}/cursor-extension"],
+      "outFiles": ["${workspaceFolder}/cursor-extension/dist/**/*.js"],
+      "preLaunchTask": "build:cursor"
+    }
+  ]
+}

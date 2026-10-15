@@ -1,10 +1,23 @@
 # guided-review
 
-guided-review turns a pull request into an ordered review tour in [Hunk](https://github.com/modem-dev/hunk), a terminal diff viewer. It is an agent skill plus a Hunk extension, for reviewers who get more agent-written pull requests than they can read line by line.
+guided-review turns a pull request into an ordered review tour in [Hunk](https://github.com/modem-dev/hunk), a terminal diff viewer, or in **Cursor** with a native tour plan, inline code comments, and code lenses. It is an agent skill plus two renderers, for reviewers who get more agent-written pull requests than they can read line by line.
 
 You give your coding agent a PR link, a PR number, or a branch. The agent audits the whole change and picks the few places that need your judgment. Then it opens Hunk on a tour of those places. Each stop covers a few lines and ends in a concrete question. Tracks group related stops, and links connect stops across tracks.
 
 A stacked PR, as managed by the `gh stack` extension, gets one tour per stack layer. The tour logic lives in `core/`, a TypeScript library with no UI code, so other renderers can reuse it.
+
+## Cursor port
+
+The [Cursor extension](cursor-extension/README.md) reuses the same tour JSON and validation core. Put its native **Tour Plan** tree in the right sidebar, click stops to open the exact Git revision, and read the evidence and decision in inline comment threads. Follow links, step through tracks, and mark stops reviewed without leaving the editor.
+
+```sh
+bun install
+bun run package:cursor
+cursor --install-extension cursor-extension/guided-review-cursor-0.1.0.vsix
+examples/demo/run.sh --cursor
+```
+
+Use **Guided Review: Move Plan to Right Sidebar…** once and select the Secondary Side Bar destination; Cursor remembers the placement. Hunk remains the default for existing commands. Add `--cursor` to `scripts/open-tour.sh` to use Cursor instead. The requirements and terminal controls below describe the Hunk renderer; see the [Cursor guide](cursor-extension/README.md) for editor controls and development.
 
 ## What a tour looks like
 
@@ -155,6 +168,7 @@ Clicking a stop in the **Tour** pane jumps to it. Clicking a link row follows th
 - `references/` holds the audit lenses the skill applies.
 - `scripts/` holds `prepare.py`, `open-tour.sh`, `install.sh`, and `test-install.sh`.
 - `extension/` is the Hunk extension, with the `hunk tour` command, the **Tour** pane, and the key bindings.
+- `cursor-extension/` is the Cursor/VS Code extension, with a native Tour Plan, inline comments, code lenses, and Git snapshots.
 - `core/` is the renderer-independent TypeScript library for validating and stepping through tours.
 - `examples/demo/` builds a throwaway repository and opens a sample tour.
 - `docs/` holds the guides linked below.
@@ -173,7 +187,7 @@ Development needs [Bun](https://bun.sh). Work from a clone, and install the skil
 
 ```bash
 bun install                # install type packages and test dependencies
-bun run check              # tsc --noEmit, then bun test core extension
+bun run check              # type-check both renderers and run their tests
 bun run demo               # open the demo tour
 scripts/test-install.sh    # test install.sh against a throwaway HOME
 ```
