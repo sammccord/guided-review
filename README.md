@@ -2,7 +2,7 @@
 
 guided-review turns a pull request into an ordered review tour in [Hunk](https://github.com/modem-dev/hunk), a terminal diff viewer. It is an agent skill plus a Hunk extension, for reviewers who get more agent-written pull requests than they can read line by line.
 
-You give your coding agent a PR link, a PR number, or a branch. The agent audits the whole change and picks the few places that need your judgment. Then it opens Hunk on a tour of those places. Each stop covers a few lines and ends in a concrete question. Tracks group related stops, and links connect stops across tracks.
+You give your coding agent a PR link, a PR number, a branch, or a tour file someone shared. The agent audits the whole change and picks the few places that need your judgment. Then it opens Hunk on a tour of those places. Each stop covers a few lines and ends in a concrete question. Tracks group related stops, and links connect stops across tracks.
 
 A stacked PR, as managed by the `gh stack` extension, gets one tour per stack layer. The tour logic lives in `core/`, a TypeScript library with no UI code, so other renderers can reuse it.
 

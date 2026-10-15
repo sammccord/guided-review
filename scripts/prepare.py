@@ -168,6 +168,32 @@ def review_branch(repo, remote, target, base_ref):
     return build_review(repo, slug, base, head, title)
 
 
+def review_tour(repo, remote, path):
+    try:
+        tour = json.loads(Path(path).read_text())
+        base, head = tour["base"], tour["head"]
+    except (OSError, json.JSONDecodeError, KeyError, TypeError) as err:
+        raise PrepareError(f"not a tour file: {path}: {err}")
+    match = PR_URL.match(tour.get("url") or "")
+    number = int(match.group(4)) if match else None
+    ref = pr_ref(number) if number else None
+    if not (rev(repo, base) and rev(repo, head)):
+        refspecs = [f"+refs/pull/{number}/head:{ref}"] if ref else []
+        git(repo, "fetch", "--quiet", remote, *refspecs, check=False)
+        for sha in (base, head):
+            if not rev(repo, sha):
+                git(repo, "fetch", "--quiet", remote, sha, check=False)
+        missing = [sha for sha in (base, head) if not rev(repo, sha)]
+        if missing:
+            raise PrepareError(f"commits {', '.join(missing)} from {path} are not reachable from {remote}")
+    slug = f"shared-pr-{number}" if number else f"shared-{head[:12]}"
+    review = build_review(repo, slug, base, head, tour.get("title"), tour.get("url"), number,
+                          stack=tour.get("stack"), ref=ref)
+    if Path(path).resolve() != Path(review["tourPath"]).resolve():
+        shutil.copyfile(path, review["tourPath"])
+    return review
+
+
 def resolve_pr(target):
     is_pr_ref = bool(re.match(r"^https?://", target) or target.isdigit())
     if not shutil.which("gh"):
@@ -208,12 +234,22 @@ def prepare_stack(repo, remote, pr, stack_info):
     return stack, reviews
 
 
-def prepare(target, base_ref):
+def prepare(targets):
     proc = run("git", "rev-parse", "--show-toplevel", check=False)
     if proc.returncode != 0:
         raise PrepareError("run inside a clone of the repository under review")
     repo = proc.stdout.strip()
     remote = remote_of(repo)
+    if targets[0].endswith(".json"):
+        reviews = [review_tour(repo, remote, path) for path in targets]
+        stack = reviews[0]["stack"]
+        if stack:
+            order = [layer["number"] for layer in stack["layers"]]
+            reviews.sort(key=lambda r: order.index(r["number"]) if r["number"] in order else len(order))
+        return {"repo": repo, "stack": stack, "stackLookup": "tour", "reviews": reviews}
+    if len(targets) > 2:
+        raise PrepareError("expected one target and an optional base ref")
+    target, base_ref = targets[0], (targets[1] if len(targets) == 2 else None)
     pr = resolve_pr(target)
     if pr is None:
         return {"repo": repo, "stack": None, "stackLookup": "not-a-pr",
@@ -227,11 +263,12 @@ def prepare(target, base_ref):
 
 
 def main(argv):
-    if len(argv) not in (2, 3):
-        print("usage: prepare.py <pr-url | pr-number | branch> [base-ref]", file=sys.stderr)
+    if len(argv) < 2:
+        print("usage: prepare.py <pr-url | pr-number | branch> [base-ref]\n"
+              "       prepare.py <tour.json>...", file=sys.stderr)
         return 1
     try:
-        result = prepare(argv[1], argv[2] if len(argv) == 3 else None)
+        result = prepare(argv[1:])
     except PrepareError as err:
         print(f"prepare: {err}", file=sys.stderr)
         return 1

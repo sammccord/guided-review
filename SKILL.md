@@ -1,6 +1,6 @@
 ---
 name: guided-review
-description: Audit a pull request, a stack of pull requests, or a branch, pick the changes that need human judgment, and open them as ordered, annotated tours of small stops grouped into tracks in the Hunk diff viewer, one tour per stack layer. Use for "guided review", "tour this PR", "review tour", "walk me through this PR", or a PR link or branch name with a request to review it in hunk. Posts to GitHub only the stops the reviewer chooses with Post to PR.
+description: Audit a pull request, a stack of pull requests, or a branch, pick the changes that need human judgment, and open them as ordered, annotated tours of small stops grouped into tracks in the Hunk diff viewer, one tour per stack layer. Use for "guided review", "tour this PR", "review tour", "walk me through this PR", or a PR link, branch name, or shared tour JSON file with a request to review it in hunk. Posts to GitHub only the stops the reviewer chooses with Post to PR.
 ---
 
 # Guided review
@@ -9,7 +9,7 @@ The reviewer's time is the scarce resource. Do the exhaustive reading yourself, 
 
 ## Inputs
 
-- **Target.** A PR URL, a PR number, or a branch name, plus an optional base ref.
+- **Target.** A PR URL, a PR number, or a branch name, plus an optional base ref. Or one or more tour JSON files someone shared, one per stack layer; see [Shared tours](#shared-tours).
 - **Stop budget.** Optional. The user may name a number ("12 stops", "stops=30") or a depth: `quick` is about 8, `standard` about 20, `deep` about 40. Default `standard`. The budget counts stops, not findings. Fill it with findings first, then with `inspect` stops in order of significance. Fall short only when the diff runs out of significant changes, and say so in the report. Never pad with nits or Mechanical files to reach it.
 
 `<skill>` below means the directory containing this file.
@@ -42,6 +42,18 @@ When `reviews` has more than one entry, run steps 2 to 7 once per review and wri
 - The stop budget applies to each layer separately. Size it to the layer: a two-file layer may need only a few stops.
 - Merged layers get no tour. They appear in the stack list for context.
 - `needsRebase: true` means the layer below has commits this layer was not built on. The diff still shows only this layer's work, but nothing proves it still applies or builds on the current lower layer. Say so in that layer's `scope.unchecked`, and add a `risk` stop when the lower layer's new commits touch code this layer uses.
+
+### Shared tours
+
+When the target is a tour file, pass every shared file at once:
+
+```bash
+<skill>/scripts/prepare.py <tour.json>...
+```
+
+It checks out each tour's own `base` and `head`, fetching them from the remote and the PR in its `url` when missing, and copies the tour to the review's `tourPath`. `stackLookup` is `tour`, and `stack` comes from the tour. Use `tourPath` from here on, never the shared file.
+
+Skip steps 2 to 6. The tour is the review. Do not rewrite its stops, verdict, or scope. Run step 7; if an anchor fails, the file does not match its commits, so report the failures and stop. Then continue from step 8. Before answering in step 9, read the code around the stop in the worktree; you did not write the audit. In step 10, the verdict is the tour author's; say where you disagree.
 
 ## 2. State the intent
 
