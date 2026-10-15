@@ -2,15 +2,17 @@
 set -euo pipefail
 
 usage() {
-  echo "usage: $(basename "$0") [--print] <repo-or-worktree-dir> <tour.json>" >&2
+  echo "usage: $(basename "$0") [--print] [--fresh] <repo-or-worktree-dir> <tour.json>" >&2
   exit 2
 }
 
 print_only=0
+fresh=0
 positional=()
 for arg in "$@"; do
   case "$arg" in
     --print) print_only=1 ;;
+    --fresh) fresh=1 ;;
     -h|--help) usage ;;
     *) positional+=("$arg") ;;
   esac
@@ -41,6 +43,7 @@ EXT="$(abspath "$(dirname "$0")/..")"
 (cd "$DIR" && hunk --extension "$EXT" tour check "$TOUR")
 
 CMD="hunk --extension $(shquote "$EXT") tour open $(shquote "$TOUR")"
+[[ $fresh -eq 0 ]] || CMD="$CMD --fresh"
 FULL="cd $(shquote "$DIR") && $CMD"
 
 vimquote() {

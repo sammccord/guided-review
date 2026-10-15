@@ -128,6 +128,8 @@ With a clone install, pass the clone's path to `--extension` instead.
 
 `tour check` prints an `ok:` line when the tour is valid. `tour open` starts Hunk in the current terminal. [Tour file format](docs/tour-format.md) lists every field and every rule.
 
+Reopening an unchanged tour resumes its saved decisions and questions. Add `--fresh` to `tour open` (or `scripts/open-tour.sh`) to start a new review without importing history. Changes to the tour, refs, repository, or PR/layer automatically start an isolated review; previous history remains on disk. Files are grouped by directory, while `>` and `<` follow tour stop order.
+
 ## Key bindings
 
 These keys work while a tour is open in Hunk:

@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { parseAnswer, parseHeartbeat, parseRequest, parseSession, type Answer, type Mailbox, type Request, type SessionRecord } from "./qa";
+import { parseAnswer, parseHeartbeat, parseRequest, parseSession, REQUEST_ID_PATTERN, REVIEW_ID_PATTERN, type Answer, type Mailbox, type Request, type SessionRecord } from "./qa";
 
 export interface MailboxPaths {
   root: string;
@@ -12,9 +12,24 @@ export interface MailboxPaths {
   approved: string;
 }
 
-/** `<x>.tour.json` keeps its mailbox at `<x>.tour.qa/`, beside the tour and outside the worktree. */
-export function mailboxPaths(tourPath: string): MailboxPaths {
-  const root = tourPath.replace(/\.json$/, "") + ".qa";
+/** Resolve the active review; an explicit id pins a writer, and null addresses the legacy root. */
+export function mailboxPaths(tourPath: string, reviewId?: string | null): MailboxPaths {
+  let root = tourPath.replace(/\.json$/, "") + ".qa";
+  if (reviewId === undefined) {
+    try {
+      const current: unknown = JSON.parse(readFileSync(join(root, "current.json"), "utf8"));
+      if (!current || typeof current !== "object" || !("reviewId" in current) || typeof current.reviewId !== "string") {
+        throw new Error("invalid review pointer");
+      }
+      reviewId = current.reviewId;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+  }
+  if (reviewId != null) {
+    if (!REVIEW_ID_PATTERN.test(reviewId)) throw new Error("invalid review id");
+    root = join(root, "reviews", reviewId);
+  }
   return {
     root,
     session: join(root, "session.json"),
@@ -56,7 +71,7 @@ async function readJsonDir(dir: string): Promise<unknown[]> {
   } catch {
     return [];
   }
-  const files = names.filter((name) => /^q-\d+\.json$/.test(name)).map((name) => readJson(join(dir, name)));
+  const files = names.filter((name) => name.endsWith(".json") && REQUEST_ID_PATTERN.test(name.slice(0, -5))).map((name) => readJson(join(dir, name)));
   return Promise.all(files);
 }
 

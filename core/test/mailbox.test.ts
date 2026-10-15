@@ -51,6 +51,33 @@ describe("mailbox", () => {
     expect(readdirSync(paths.root).sort()).toEqual(["agent.json", "answered", "inbox", "session.json"]);
   });
 
+  test("active review pointers pin generation paths and read namespaced requests", async () => {
+    const tour = join(dir, "generations.tour.json");
+    const legacy = mailboxPaths(tour, null);
+    const reviewId = "12345678-1234-1234-1234-123456789abc";
+    const paths = mailboxPaths(tour, reviewId);
+    await writeJsonAtomic(join(legacy.root, "current.json"), { reviewId });
+    expect(mailboxPaths(tour)).toEqual(paths);
+    expect(mailboxPaths(tour, null)).toEqual(legacy);
+    const id = `q-${reviewId}-1` as const;
+    await writeJsonAtomic(requestPath(paths, id), { ...ask(1), id });
+    expect((await readMailbox(paths)).requests.map(request => request.id)).toEqual([id]);
+    await writeJsonAtomic(join(legacy.root, "current.json"), { reviewId: "87654321-1234-1234-1234-123456789abc" });
+    expect(mailboxPaths(tour)).not.toEqual(paths);
+    expect((await readMailbox(paths)).requests).toHaveLength(1);
+  });
+
+  test("invalid review pointers fail closed instead of falling back to legacy history", async () => {
+    const tour = join(dir, "invalid-pointer.tour.json");
+    const root = mailboxPaths(tour, null).root;
+    for (const pointer of [{ reviewId: "../../elsewhere" }, { reviewId: 7 }, {}]) {
+      await writeJsonAtomic(join(root, "current.json"), pointer);
+      expect(() => mailboxPaths(tour)).toThrow();
+    }
+    writeFileSync(join(root, "current.json"), "{broken");
+    expect(() => mailboxPaths(tour)).toThrow();
+  });
+
   test("writeJsonAtomic leaves no temp file behind and overwrites in place", async () => {
     const path = join(dir, "atomic", "deep", "value.json");
     await writeJsonAtomic(path, { n: 1 });

@@ -94,6 +94,17 @@ describe("parse", () => {
     expect(parseRequest({ ...request(1, { kind: "comment" }), body: 7 })).toBeNull();
   });
 
+  test("generation-qualified request IDs and session identities round-trip without accepting paths", () => {
+    const reviewId = "12345678-1234-1234-1234-123456789abc";
+    const item = { ...request(1, { kind: "ask" }), id: `q-${reviewId}-1` as const };
+    expect(parseRequest(item)).toEqual(item);
+    expect(parseRequest({ ...item, id: "q-../../other-1" })).toBeNull();
+    const identified = { ...session, reviewId, tourFingerprint: "fingerprint" };
+    expect(parseSession(identified)).toEqual(identified);
+    expect(parseSession({ ...identified, reviewId: "../../other" })).toBeNull();
+    expect(parseSession({ ...identified, tourFingerprint: 7 })).toBeNull();
+  });
+
   test("answers, heartbeats, and sessions", () => {
     expect(parseAnswer(answer("q-1"))).toEqual(answer("q-1"));
     expect(parseAnswer(answer("q-1", null))).toEqual(answer("q-1", null));
