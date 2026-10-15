@@ -130,6 +130,14 @@ With a clone install, pass the clone's path to `--extension` instead.
 
 Reopening an unchanged tour resumes its saved decisions and questions. Add `--fresh` to `tour open` (or `scripts/open-tour.sh`) to start a new review without importing history. Changes to the tour, refs, repository, or PR/layer automatically start an isolated review; previous history remains on disk. Files are grouped by directory, while `>` and `<` follow tour stop order.
 
+## Saved settings
+
+Theme selections made through **View > Themes** during a tour are saved immediately and used by later tours, including tours opened in other repositories or with `--fresh`. You do not need to finish or quit the current tour first. Picker previews are not saved.
+
+The preference lives in `~/.config/guided-review/settings.json` (or `$XDG_CONFIG_HOME/guided-review/settings.json`). It only overrides the theme for guided-review tours; Hunk's config and ordinary diff reviews are unchanged. Before you select a theme, tours use Hunk's configured default. Delete this file to return to that default.
+
+Other view settings still use Hunk's normal save-on-quit flow.
+
 ## Key bindings
 
 These keys work while a tour is open in Hunk:
