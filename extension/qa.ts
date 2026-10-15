@@ -52,6 +52,7 @@ import {
   writeJsonAtomicSync,
   type MailboxPaths,
 } from "../core/src/mailbox";
+import { assertSessionTour, pinTourRefs, prepareSession } from "./session";
 
 const EXTENSION_DIR = resolve(import.meta.dir, "..");
 const WAIT_DEFAULT_SECONDS = 90;
@@ -72,7 +73,7 @@ export function qaHint(keybindings?: Partial<ExtensionPaneProps["keybindings"]>)
 }
 
 export const QA_USAGE = [
-  "usage: hunk tour check|open <tour.json>",
+  "usage: hunk tour check <tour.json> | open <tour.json> [--fresh]",
   "       hunk tour wait <tour.json>... [--timeout <seconds>] [--away <minutes>]",
   "       hunk tour answer <tour.json> <id> --text <answer>",
   "       hunk tour approve <tour.json> [--body <text>]",
@@ -145,7 +146,9 @@ async function readAll(tours: readonly string[]): Promise<TourBox[]> {
   return Promise.all(
     tours.map(async (tour) => {
       const paths = mailboxPaths(tour);
-      return { tour, paths, box: await readMailbox(paths) };
+      const box = await readMailbox(paths);
+      if (box.session?.tourFingerprint) assertSessionTour(box.session, await readTour(tour, box.session.repo));
+      return { tour, paths, box };
     }),
   );
 }
@@ -159,15 +162,16 @@ function answerCommand(tour: string, id: string): string {
   return `hunk --extension ${EXTENSION_DIR} tour answer ${tour} ${id} --text '<answer>'`;
 }
 
-async function readTour(path: string) {
+async function readTour(path: string, repo?: string) {
   const parsed = parseTour(JSON.parse(await readFile(path, "utf8")));
   if (!parsed.ok) throw new Error(`${path}: ${parsed.errors.join("; ")}`);
-  return parsed.tour;
+  return repo === undefined ? parsed.tour : pinTourRefs(repo, parsed.tour);
 }
 
 async function finalPayload(boxes: readonly TourBox[], ends: readonly Exclude<ReviewEnd, null>[]) {
   const approval = await Promise.all(boxes.map(async ({ tour, box }) => {
-    const loaded = await readTour(tour);
+    const loaded = await readTour(tour, box.session?.repo);
+    if (box.session?.tourFingerprint) assertSessionTour(box.session, loaded);
     const blockers = approvalBlockers(loaded.verdict, tourStops(loaded).length, box);
     return { tour, eligible: blockers.length === 0, blockers };
   }));
@@ -180,7 +184,7 @@ async function finalPayload(boxes: readonly TourBox[], ends: readonly Exclude<Re
   };
 }
 
-export async function runWait(args: readonly string[], ctx: ExtensionCliCommandContext): Promise<ExtensionCliCommandResult> {
+async function waitForReview(args: readonly string[], ctx: ExtensionCliCommandContext): Promise<ExtensionCliCommandResult> {
   const parsed = parseWaitArgs(args, ctx.cwd);
   if (typeof parsed === "string") {
     await writeLine(ctx.stderr, `tour wait: ${parsed}`);
@@ -223,6 +227,15 @@ export async function runWait(args: readonly string[], ctx: ExtensionCliCommandC
     ? { kind: "away", idleMinutes, next: "stop waiting; tell the reviewer the agent paused and to say when to resume" }
     : { kind: "idle", idleMinutes, next: "wait again; do not end your turn" });
   return { kind: "exit", code: 0 };
+}
+
+export async function runWait(args: readonly string[], ctx: ExtensionCliCommandContext): Promise<ExtensionCliCommandResult> {
+  try {
+    return await waitForReview(args, ctx);
+  } catch (error) {
+    await writeLine(ctx.stderr, `tour wait: ${error instanceof Error ? error.message : String(error)}`);
+    return { kind: "exit", code: 1 };
+  }
 }
 
 /** `--repo` is ambiguous when two Hunk sessions share the worktree, so answers address the mailbox owner's session by pid. */
@@ -298,15 +311,17 @@ export async function runApprove(args: readonly string[], ctx: ExtensionCliComma
   }
   try {
     const path = resolve(ctx.cwd, file);
-    const tour = await readTour(path);
+    let tour = await readTour(path);
     const paths = mailboxPaths(path);
     const box = await readMailbox(paths);
     const session = box.session;
     if (!session || !reviewEnd(box, pidAlive)) throw new Error("review has not ended; finish or close Hunk first");
+    tour = await pinTourRefs(session.repo, tour);
     const blockers = approvalBlockers(tour.verdict, tourStops(tour).length, box);
     if (blockers.length) throw new Error(`approval blocked:\n${blockers.join("\n")}`);
     const target = tour.url ? parsePullRequestUrl(tour.url) : null;
     if (!target) throw new Error("tour has no PR url");
+    assertSessionTour(session, tour);
     const head = session.head;
     const approved = await readJson(paths.approved);
     if (typeof approved === "object" && approved !== null && "head" in approved && approved.head === head && "url" in approved && typeof approved.url === "string") {
@@ -433,6 +448,14 @@ export async function runAnswer(args: readonly string[], ctx: ExtensionCliComman
     await writeLine(ctx.stderr, `tour answer: ${paths.session} is missing; open the tour in Hunk first`);
     return { kind: "exit", code: 1 };
   }
+  if (box.session.tourFingerprint) {
+    try {
+      assertSessionTour(box.session, await readTour(parsed.tour, box.session.repo));
+    } catch (error) {
+      await writeLine(ctx.stderr, `tour answer: ${error instanceof Error ? error.message : String(error)}`);
+      return { kind: "exit", code: 1 };
+    }
+  }
   let text = parsed.text;
   if (request.kind === "comment") {
     try {
@@ -528,11 +551,8 @@ export function decisionBadge(decision: Decision): string {
 }
 
 /** Called from `tour open`, in the process that becomes the TUI, so `pid` is the TUI's own. */
-export async function openSession(input: { repo: string; tourPath: string; head: string }): Promise<void> {
-  const paths = mailboxPaths(input.tourPath);
-  const session: SessionRecord = { ...input, pid: process.pid, openedAt: now() };
-  await writeJsonAtomic(paths.session, session);
-  setState({ paths, session, box: await readMailbox(paths) });
+export async function openSession(input: Parameters<typeof prepareSession>[0]): Promise<void> {
+  setState(await prepareSession(input));
 }
 
 let sessionWrite: Promise<void> = Promise.resolve();
@@ -571,7 +591,7 @@ type RequestBody = Request extends infer R ? (R extends Request ? Omit<R, "id" |
 async function writeRequest(paths: MailboxPaths, body: RequestBody): Promise<void> {
   const box = await readMailbox(paths);
   const seq = nextSeq(box);
-  const request = { id: `q-${seq}`, seq, at: now(), ...body } as Request;
+  const request = { id: box.session?.reviewId ? `q-${box.session.reviewId}-${seq}` : `q-${seq}`, seq, at: now(), ...body } as Request;
   await writeJsonAtomic(requestPath(paths, request.id), request);
   setState({ ...state, box: { ...box, requests: [...box.requests, request] } });
   void syncPlaceholders(state.box);

@@ -1,4 +1,4 @@
-import { writeFile, readFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { useEffect, useRef, useSyncExternalStore, type ReactNode } from "react";
@@ -22,6 +22,7 @@ import {
   indexStops,
   initialCursor,
   move,
+  parseTour,
   segmentText,
   stackPosition,
   statusText,
@@ -44,8 +45,11 @@ import {
 import { readDiffRanges } from "../core/src/git";
 import { decisionBadge, openSession, qaHint, QA_KEYS, QA_USAGE, registerQa, requestComment, requestDecision, runAnswer, runApprove, runWait, useMailbox, useSpinnerFrame, useWaiting, type TourAccess } from "./qa";
 import { toSidecar } from "./sidecar";
+import { groupFilesByDirectory } from "./files";
+import { pinTourRefs } from "./session";
 
 const PANE_ID = "tour";
+const sidecarDirectories = new Set<string>();
 
 interface TourState {
   tour: Tour | null;
@@ -84,11 +88,19 @@ async function loadAndCheck(file: string, cwd: string): Promise<ValidateResult> 
   } catch (error) {
     return { ok: false, errors: [`cannot read ${path}: ${error instanceof Error ? error.message : String(error)}`] };
   }
-  return validateTour(raw, (base, head) => readDiffRanges(cwd, base, head));
+  const parsed = parseTour(raw);
+  if (!parsed.ok) return parsed;
+  try {
+    return await validateTour(await pinTourRefs(cwd, parsed.tour), (base, head) => readDiffRanges(cwd, base, head));
+  } catch (error) {
+    return { ok: false, errors: [error instanceof Error ? error.message : String(error)] };
+  }
 }
 
 async function writeSidecar(tour: Tour): Promise<string> {
-  const path = join(tmpdir(), `hunk-guided-review-${tour.head.replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 40)}.json`);
+  const directory = await mkdtemp(join(tmpdir(), "hunk-guided-review-"));
+  sidecarDirectories.add(directory);
+  const path = join(directory, "context.json");
   await writeFile(path, `${JSON.stringify(toSidecar(tour), null, 2)}\n`, { mode: 0o600 });
   return path;
 }
@@ -98,7 +110,8 @@ async function runTourCli(args: readonly string[], ctx: ExtensionCliCommandConte
   if (subcommand === "wait") return runWait(args.slice(1), ctx);
   if (subcommand === "answer") return runAnswer(args.slice(1), ctx);
   if (subcommand === "approve") return runApprove(args.slice(1), ctx);
-  if ((subcommand !== "check" && subcommand !== "open") || !file || extra.length > 0) {
+  const fresh = subcommand === "open" && extra.length === 1 && extra[0] === "--fresh";
+  if ((subcommand !== "check" && subcommand !== "open") || !file || (extra.length > 0 && !fresh)) {
     await writeLines(ctx.stderr, QA_USAGE);
     return { kind: "exit", code: 2 };
   }
@@ -126,7 +139,7 @@ async function runTourCli(args: readonly string[], ctx: ExtensionCliCommandConte
 
   const sidecarPath = await writeSidecar(tour);
   setState({ tour, stops, links: index, cursor: initialCursor() });
-  await openSession({ repo: ctx.cwd, tourPath: resolve(ctx.cwd, file), head: tour.head });
+  await openSession({ repo: ctx.cwd, tourPath: resolve(ctx.cwd, file), tour, fresh });
   return { kind: "delegate", argv: ["diff", `${tour.base}...${tour.head}`, "--agent-context", sidecarPath, "--agent-notes"] };
 }
 
@@ -660,6 +673,10 @@ function TourPane({ files, theme, actions, keybindings }: ExtensionPaneProps): R
 }
 
 export default function registerGuidedReview(hunk: HunkExtensionAPI) {
+  // Sorting the sidecar alone misses unannotated files Hunk appends after its entries.
+  hunk.transformChangeset((changeset) => state.tour
+    ? { ...changeset, files: groupFilesByDirectory(changeset.files) } : changeset);
+
   hunk.registerCliCommand(
     { name: "tour", summary: "Check, open, answer, or approve a guided review tour", usage: "check|open|wait|answer|approve <tour.json> ..." },
     runTourCli,
@@ -673,6 +690,11 @@ export default function registerGuidedReview(hunk: HunkExtensionAPI) {
     defaultOpen: true,
     available: () => state.tour !== null,
     component: TourPane,
+  });
+
+  hunk.on("shutdown", async () => {
+    await Promise.all([...sidecarDirectories].map(directory => rm(directory, { recursive: true, force: true })));
+    sidecarDirectories.clear();
   });
 
   // Below 160 columns Hunk hides every side pane, even logically open ones, until `panes.open` reveals the area.

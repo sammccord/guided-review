@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { readDiffRanges } from "../src/git";
+import { readDiffRanges, resolveDiffRefs } from "../src/git";
 import { checkAnchors } from "../src/index";
 import { stop, tour } from "./fixtures";
 
@@ -73,6 +73,12 @@ describe("readDiffRanges", () => {
       ],
     });
     expect(checkAnchors(sample, ranges)).toEqual(['stop 3 "Old path": path old-name.txt is not in the diff']);
+  });
+
+  test("resolves symbolic refs to pinned commits and rejects option-like refs", async () => {
+    expect(await resolveDiffRefs(repo, "HEAD~1", "HEAD")).toEqual({ base, head });
+    expect(await resolveDiffRefs(repo, base.toUpperCase(), head)).toEqual({ base, head });
+    await expect(resolveDiffRefs(repo, "--help", "HEAD")).rejects.toThrow("cannot resolve --help");
   });
 
   test("throws with git's stderr on a bad revision", async () => {

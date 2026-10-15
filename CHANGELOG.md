@@ -6,6 +6,7 @@ This file lists all notable changes to this project. The format follows [Keep a 
 
 ### Added
 
+- `tour open <tour.json> --fresh` and `open-tour.sh --fresh` start a new review without importing saved history.
 - Unanswered requests show a "Waiting for the agent" placeholder in Hunk and an animated spinner on waiting stop rows and before the Tour pane status text.
 - After the review draft, the agent can ask for explicit approval of an eligible PR at its reviewed head. `tour approve` enforces structural blockers, checks the PR head, and records approval for safe retries.
 - Current stops show decide, ask, and finish keys and a **Decide** button. `F` finishes the review, with confirmation for undecided stops.
@@ -21,6 +22,13 @@ This file lists all notable changes to this project. The format follows [Keep a 
 - `tour wait` keeps the agent waiting on `idle` and reports `away` only after 30 minutes without reviewer activity, configurable with `--away`.
 - The `cleanup` command from `prepare.py` also removes the review's `.tour.qa` directory.
 - The README and install guide lead with `npx skills add sammccord/guided-review -g`, which installs the skill without a clone. The clone and `scripts/install.sh` route remains for contributors.
+
+### Fixed
+
+- Tour diffs group all files by directory, including unannotated files, so the file explorer no longer repeats folders. Narrative stop navigation is unchanged.
+- Reopened tours reuse decisions only when the repository and complete tour fingerprint match. Changed tours and stack layers use isolated review generations; previous history remains on disk.
+- Generation-qualified request IDs prevent delayed answers from reaching a new review. Answer and approval commands reject edited tours until they are reopened; the skill forbids automatic historical-note replay.
+- Each tour open owns a separate temporary sidecar, cleaned on shutdown. Moving symbolic base/head refs are resolved and pinned to commits before validation, session identity, and display.
 
 ## 0.1.0 - 2026-10-13
 

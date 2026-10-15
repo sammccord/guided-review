@@ -20,8 +20,12 @@ export interface StopRef {
 export const DECISIONS = ["agree", "disagree", "unsure"] as const;
 export type Decision = (typeof DECISIONS)[number];
 
+export const REVIEW_ID_PATTERN = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
+export const REQUEST_ID_PATTERN = /^q-(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}-)?\d+$/;
+export type RequestId = `q-${string}`;
+
 interface RequestBase {
-  id: `q-${number}`;
+  id: RequestId;
   seq: number;
   at: string;
   stop: StopRef | null;
@@ -57,6 +61,8 @@ export interface SessionRecord {
   activeAt?: string;
   finishedAt?: string;
   closedAt?: string;
+  reviewId?: string;
+  tourFingerprint?: string;
 }
 
 export function ownsSession(onDisk: SessionRecord | null, mine: SessionRecord): boolean {
@@ -112,10 +118,10 @@ function parseStopRef(raw: unknown): StopRef | null {
 
 function parseBase(raw: Json): RequestBase | null {
   const { id, seq, at } = raw;
-  if (!isString(id) || !/^q-\d+$/.test(id) || !isPositiveInteger(seq) || !isString(at)) return null;
+  if (!isString(id) || !REQUEST_ID_PATTERN.test(id) || !isPositiveInteger(seq) || !isString(at)) return null;
   const stop = raw.stop === null ? null : parseStopRef(raw.stop);
   if (raw.stop !== null && !stop) return null;
-  return { id: id as `q-${number}`, seq, at, stop };
+  return { id: id as RequestId, seq, at, stop };
 }
 
 export function parseRequest(raw: unknown): Request | null {
@@ -174,6 +180,9 @@ export function parseSession(raw: unknown): SessionRecord | null {
   const finishedAt = optionalString(raw.finishedAt);
   const closedAt = optionalString(raw.closedAt);
   const activeAt = optionalString(raw.activeAt);
+  const reviewId = optionalString(raw.reviewId);
+  const tourFingerprint = optionalString(raw.tourFingerprint);
+  if (reviewId === null || (reviewId !== undefined && !REVIEW_ID_PATTERN.test(reviewId)) || tourFingerprint === null) return null;
   if (finishedAt === null || closedAt === null || activeAt === null) return null;
   return {
     repo,
@@ -181,6 +190,8 @@ export function parseSession(raw: unknown): SessionRecord | null {
     head,
     pid,
     openedAt,
+    ...(reviewId === undefined ? {} : { reviewId }),
+    ...(tourFingerprint === undefined ? {} : { tourFingerprint }),
     ...(activeAt === undefined ? {} : { activeAt }),
     ...(finishedAt === undefined ? {} : { finishedAt }),
     ...(closedAt === undefined ? {} : { closedAt }),

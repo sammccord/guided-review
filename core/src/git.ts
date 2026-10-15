@@ -14,6 +14,21 @@ const GIT_PREFIX_ARGS = [
   "diff.dstPrefix=b/",
 ];
 
+/** Resolve moving refs once, then use immutable commits for validation and the displayed diff. */
+export async function resolveDiffRefs(cwd: string, base: string, head: string): Promise<{ base: string; head: string }> {
+  const commit = (ref: string): Promise<string> => {
+    if (/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(ref)) return Promise.resolve(ref.toLowerCase());
+    return new Promise((resolve, reject) => {
+      execFile("git", ["-C", cwd, "rev-parse", "--verify", "--end-of-options", `${ref}^{commit}`], (error, stdout, stderr) => {
+        if (error) reject(new Error(`cannot resolve ${ref} in ${cwd}: ${String(stderr).trim() || error.message}`));
+        else resolve(String(stdout).trim());
+      });
+    });
+  };
+  const [resolvedBase, resolvedHead] = await Promise.all([commit(base), commit(head)]);
+  return { base: resolvedBase, head: resolvedHead };
+}
+
 /** Run git with hunk's own diff arguments and collect hunk ranges per path. */
 export function readDiffRanges(cwd: string, base: string, head: string): Promise<DiffRanges> {
   const range = `${base}...${head}`;

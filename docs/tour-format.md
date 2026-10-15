@@ -107,6 +107,8 @@ The top-level object.
 | `skipped` | `SkippedFile[]` | yes | Array. May be empty. |
 | `stack` | `TourStack` | no | Present when the reviewed PR is one layer of a stack. |
 
+`tour open` resolves symbolic `base` and `head` refs to commit IDs before validation and pins the displayed diff to those IDs. Reopening after either ref moves starts a new review generation even when the tour JSON is unchanged.
+
 A top-level `stops` key with any value, `null` included, produces the error `stops is no longer supported; group stops under tracks[]`.
 
 ## Links

@@ -6,11 +6,13 @@ import type { ExtensionCliCommandContext, ExtensionCliCommandResult } from "hunk
 import type { Decision, Request, SessionRecord, Tour } from "../core/src/index";
 import { answerPath, mailboxPaths, requestPath, writeJsonAtomic } from "../core/src/mailbox";
 import { githubApproveArgs, githubCommentArgs, parsePullRequestUrl, qaHint, runAnswer, runApprove, runWait, sessionAddArgs, sessionIdForPid } from "./qa";
+import { tourFingerprint } from "./session";
 
 const anchor = { path: "src/a.ts", side: "new" as const, line: 10 };
 const stop = { number: 2, title: "Loop bound", ask: "Block?", anchor };
+const HEAD = "b".repeat(40);
 const tourData: Tour = {
-  version: 1, title: "Review", url: "https://github.example.com/o/r/pull/42", base: "aaa", head: "bbb", verdict: "approve",
+  version: 1, title: "Review", url: "https://github.example.com/o/r/pull/42", base: "a".repeat(40), head: HEAD, verdict: "approve",
   summary: "- Safe change.", scope: { checked: [], unchecked: [] }, skipped: [],
   tracks: [{ title: "Bounds", summary: "- Check bounds.", stops: [1, 2].map(() => ({ ...anchor, kind: "inspect", title: stop.title, ask: stop.ask, body: "- Bound." })) }],
 };
@@ -160,8 +162,9 @@ const notifications = [];
 const ctx = { notify: (text) => notifications.push(text), dialogs: { confirm: async () => true } };
 const access = { currentStop: () => null, stopCount: () => 0 };
 registerQa({ on: (name, handler) => events.set(name, handler), registerCommand: (command, handler) => commands.set(command.id, handler) }, access);
-await openSession({ repo: dir, tourPath: tour, head: "bbb" });
+await openSession({ repo: dir, tourPath: tour, tour: ${JSON.stringify(tourData)} });
 await events.get("changeset_loaded")({}, ctx);
+const activePaths = mailboxPaths(tour);
 const calls = () => { try { return readFileSync(dir + "/calls", "utf8").trim().split("\\n").filter(Boolean).map(JSON.parse); } catch { return []; } };
 const until = async (predicate) => { for (let i = 0; i < 200; i++) { if (await predicate()) return; await Bun.sleep(10); } throw new Error("Timed out"); };
 await until(() => calls().length > 0);
@@ -179,15 +182,16 @@ await Bun.sleep(250);
 assert.equal(calls().filter((args) => args[2] === "add").length, 1);
 assert.ok(calls().find((args) => args[2] === "add").includes("⋯ Waiting for the agent"));
 await events.get("note_created")({ note: { ...note, id: "user:2", parentId: "placeholder:user:1", body: "More?" } }, ctx);
-assert.equal((await readMailbox(paths)).requests[1].kind, "followup");
+assert.equal((await readMailbox(activePaths)).requests[1].kind, "followup");
 await until(() => calls().filter((args) => args[2] === "add").length === 2);
-await writeJsonAtomic(answerPath(paths, "q-1"), { id: "q-1", commentId: "answer:1", text: "Because", at: "t1" });
+const firstRequest = (await readMailbox(activePaths)).requests[0];
+await writeJsonAtomic(answerPath(activePaths, firstRequest.id), { id: firstRequest.id, commentId: "answer:1", text: "Because", at: "t1" });
 poll();
 await Bun.sleep(250);
 assert.equal(calls().some((args) => args[2] === "rm" && args[4] === "placeholder:user:1"), false);
 writeFileSync(dir + "/mode", "fail");
 await commands.get("finish")(ctx);
-assert.ok((await readMailbox(paths)).session.finishedAt);
+assert.ok((await readMailbox(activePaths)).session.finishedAt);
 assert.ok(calls().some((args) => JSON.stringify(args) === JSON.stringify(["session", "comment", "rm", "mine", "placeholder:user:2", "--json"])));
 const count = calls().length;
 writeFileSync(dir + "/mode", "ok");
@@ -218,7 +222,7 @@ describe("tour wait and answer", () => {
   const session = (tour: string, rest: Partial<SessionRecord> = {}): SessionRecord => ({
     repo: dir,
     tourPath: tour,
-    head: "bbb",
+    head: HEAD,
     pid: process.pid,
     openedAt: "t0",
     ...rest,
@@ -383,10 +387,10 @@ describe("tour wait and answer", () => {
     const callsPath = join(bin, "calls.jsonl");
     const url = "https://github.example.com/o/r/pull/42#pullrequestreview-123";
     await writeJsonAtomic(tour, tourData);
-    await writeJsonAtomic(paths.session, session(tour, { repo: bin, closedAt: "t9" }));
+    await writeJsonAtomic(paths.session, session(tour, { repo: bin, tourFingerprint: tourFingerprint(bin, tourData), closedAt: "t9" }));
     await writeJsonAtomic(requestPath(paths, "q-1"), { ...decision(1, "agree"), stop: { ...stop, number: 1 } });
     await writeJsonAtomic(requestPath(paths, "q-2"), decision(2, "agree"));
-    if (scenario === "cached") await writeJsonAtomic(paths.approved, { url, head: "bbb", at: "t8" });
+    if (scenario === "cached") await writeJsonAtomic(paths.approved, { url, head: HEAD, at: "t8" });
     else await writeJsonAtomic(paths.approved, { url: "old", head: "aaa", at: "t0" });
     writeFileSync(join(bin, "gh"), `#!${process.execPath}
 import { appendFileSync } from "node:fs";
@@ -394,13 +398,13 @@ const args = process.argv.slice(2);
 appendFileSync(${JSON.stringify(callsPath)}, JSON.stringify({ args, cwd: process.cwd() }) + "\\n");
 if (${JSON.stringify(scenario)} === "failure") { console.error("gh: denied (HTTP 403)"); process.exit(1); }
 const endpoint = "repos/o/r/pulls/42";
-if (args.includes(endpoint)) console.log(JSON.stringify({ head: { sha: ${JSON.stringify(scenario === "moved" ? "ccc" : "bbb")} } }));
+if (args.includes(endpoint)) console.log(JSON.stringify({ head: { sha: ${JSON.stringify(scenario === "moved" ? "ccc" : HEAD)} } }));
 else if (args.includes("user")) console.log("reviewer");
 else if (args.includes("--paginate")) console.log(JSON.stringify([
-  [{ user: { login: "other" }, state: "APPROVED", commit_id: "bbb" },
+  [{ user: { login: "other" }, state: "APPROVED", commit_id: "${HEAD}" },
    { user: { login: "reviewer" }, state: "APPROVED", commit_id: "aaa" },
-   { user: { login: "reviewer" }, state: "COMMENTED", commit_id: "bbb" }],
-  ${scenario === "existing" ? JSON.stringify([{ user: { login: "reviewer" }, state: "APPROVED", commit_id: "bbb", html_url: url }]) : "[]"}
+   { user: { login: "reviewer" }, state: "COMMENTED", commit_id: "${HEAD}" }],
+  ${scenario === "existing" ? JSON.stringify([{ user: { login: "reviewer" }, state: "APPROVED", commit_id: HEAD, html_url: url }]) : "[]"}
 ]));
 else console.log(JSON.stringify(${JSON.stringify(scenario === "bad-response" ? {} : { html_url: url })}));
 `, { mode: 0o755 });
@@ -412,7 +416,7 @@ else console.log(JSON.stringify(${JSON.stringify(scenario === "bad-response" ? {
       const succeeds = ["new", "existing", "cached"].includes(scenario);
       expect(result.result).toEqual({ kind: "exit", code: succeeds ? 0 : 1 });
       expect(calls).toHaveLength(scenario === "cached" ? 0 : scenario === "moved" || scenario === "failure" ? 1 : scenario === "existing" ? 3 : 4);
-      if (scenario === "moved") expect(result.stderr).toContain("PR head moved from bbb to ccc; re-run the review");
+      if (scenario === "moved") expect(result.stderr).toContain(`PR head moved from ${HEAD} to ccc; re-run the review`);
       if (scenario === "failure") expect(result.stderr).toContain("gh: denied (HTTP 403)");
       if (scenario === "bad-response") expect(result.stderr).toContain("gh returned no review html_url");
       if (!succeeds) {
@@ -420,13 +424,13 @@ else console.log(JSON.stringify(${JSON.stringify(scenario === "bad-response" ? {
         return;
       }
       expect(json(result.stdout)).toEqual({ status: scenario === "new" ? "approved" : "already-approved", url });
-      expect(await Bun.file(paths.approved).json()).toMatchObject({ url, head: "bbb" });
+      expect(await Bun.file(paths.approved).json()).toMatchObject({ url, head: HEAD });
       if (scenario !== "cached") {
         expect(calls[0]).toEqual({ args: ["api", "--hostname", "github.example.com", "repos/o/r/pulls/42"], cwd: realpathSync(bin) });
         expect(calls[1].args).toEqual(["api", "--hostname", "github.example.com", "user", "--jq", ".login"]);
         expect(calls[2].args).toEqual(["api", "--hostname", "github.example.com", "--paginate", "--slurp", "repos/o/r/pulls/42/reviews"]);
       }
-      if (scenario === "new") expect(calls[3].args).toEqual(githubApproveArgs({ host: "github.example.com", owner: "o", repo: "r", number: 42 }, "bbb", "Reviewed bounds."));
+      if (scenario === "new") expect(calls[3].args).toEqual(githubApproveArgs({ host: "github.example.com", owner: "o", repo: "r", number: 42 }, HEAD, "Reviewed bounds."));
       expect(json((await run(runApprove, [tour], dir)).stdout)).toEqual({ status: "already-approved", url });
       expect(await Bun.file(callsPath).exists() ? (await Bun.file(callsPath).text()).trim().split("\n").length : 0).toBe(calls.length);
     } finally {
@@ -499,7 +503,7 @@ console.log(JSON.stringify("${command}" === "gh"
       const calls = (await Bun.file(callsPath).text()).trim().split("\n").map(json);
       expect(calls[0]).toEqual({
         command: "gh",
-        args: githubCommentArgs({ host: "github.example.com", owner: "o", repo: "r", number: 42 }, "bbb", anchor, text),
+        args: githubCommentArgs({ host: "github.example.com", owner: "o", repo: "r", number: 42 }, HEAD, anchor, text),
         cwd: realpathSync(bin),
       });
       if (failGh) {

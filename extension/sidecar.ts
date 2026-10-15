@@ -48,7 +48,7 @@ function stackLines(stack: TourStack): string {
   return lines.map((line) => `\n${line}`).join("");
 }
 
-/** Files ordered by first stop, one entry per file, so hunk's sidebar and `{`/`}` follow the tour. */
+/** One entry per file, in first-stop order; the changeset transform groups the complete diff. */
 export function toSidecar(tour: Tour): SidecarDocument {
   const stops = tourStops(tour);
   const index = indexStops(stops);
