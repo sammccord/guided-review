@@ -30,9 +30,9 @@ The whole diff stays visible. A tour orders your attention but does not hide any
 
 ## Asking the agent from inside Hunk
 
-The agent that wrote the tour holds the whole audit in its context. The reviewer can use that without leaving Hunk. Every note the reviewer adds is a question. A reply under one of the agent's answers is a follow-up. `Q` sends a question. `V` sends a decision on the current stop: `agree`, `disagree`, or `unsure` with an optional comment. The agent answers inline as threaded notes through `hunk session comment add`, and uses the decisions to draft the review at the end.
+The agent that wrote the tour holds the whole audit in its context. The reviewer can use that without leaving Hunk. Every note the reviewer adds is a question. A reply under one of the agent's answers is a follow-up. `Q` sends a question. `V` sends `agree`, `disagree`, or `unsure` on the current stop with an optional comment. Decisions are optional. Silence means agreement with the agent's verdict and the stop's framing. The agent answers inline as threaded notes through `hunk session comment add`. It drafts the review from notes, any decisions, and the conversation.
 
-The current stop shows a muted key hint below **Ask:** and a **Decide** button beside **Post to PR**. The hint follows rebound keys and omits unbound commands. `F` finishes the review and asks for confirmation if stops remain undecided. At the last stop, `>` points to the finish key.
+The current stop shows a muted key hint below **Ask:** and a **Decide** button beside **Post to PR**. The hint follows rebound keys and omits unbound commands. `F` finishes the review. At the last stop, `>` points to the finish key.
 
 The two sides never share a process, so they talk through files. The mailbox root sits beside the tour, `<tour>.tour.qa/`. Its `current.json` points to the active review UUID; files below live under `reviews/<review-id>/`:
 
@@ -67,7 +67,7 @@ A tour speaks to the reviewer, in private, and goes away when you close Hunk. Yo
 Two exceptions require the reviewer's action:
 
 - **Post to PR** starts with a click on a stop. The agent rewords that stop as feedback for the author. `tour answer` posts it through `gh api` at the tour's `head`, then adds a Hunk note with the GitHub link. A stop anchored outside the PR's diff, or a tour without a PR `url`, fails loudly. A failure after GitHub accepts the comment but before the answer is recorded can duplicate the PR comment on retry.
-- **Approval** requires an explicit yes in the agent chat after the review draft. The agent asks only when the tour is eligible and the transcript has no unresolved concerns. `tour approve <tour.json> [--body <text>]` requires an ended review, an `approve` verdict, and every stop agreed. It checks the PR head against the session head and submits approval pinned to that commit. A moved head requires a fresh review. The CLI checks both `approved.json` and the current user's GitHub reviews to avoid duplicate approval on retry. Each stack layer needs its own confirmation and approval.
+- **Approval** requires an explicit yes in the agent chat after the review draft. The agent asks only when the tour is eligible and the transcript has no unresolved concerns. An empty transcript is agreement. The agent judges notes, questions, decision comments, `unsure` decisions, and posted PR comments. Posted comments do not by themselves block approval. The agent judges whether they ask for changes before merge. `tour approve <tour.json> [--body <text>]` requires an ended review. Its hard blockers are a non-approve verdict or a stop whose latest decision is `disagree`. It checks the PR head against the session head and submits approval pinned to that commit. A moved head requires a fresh review. The CLI checks both `approved.json` and the current user's GitHub reviews to avoid duplicate approval on retry. Each stack layer needs its own confirmation and approval.
 
 ## Why stops are small, and why tracks and links exist
 

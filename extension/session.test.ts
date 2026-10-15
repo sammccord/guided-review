@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { chmod, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { approvalBlockers, decisions, pending, type Request, type Tour } from "../core/src/index";
+import { decisions, pending, type Request, type Tour } from "../core/src/index";
 import { answerPath, mailboxPaths, readMailbox, requestPath, writeJsonAtomic } from "../core/src/mailbox";
 import { stop, tour } from "../core/test/fixtures";
 import { assertSessionTour, prepareSession, tourFingerprint } from "./session";
@@ -61,7 +61,6 @@ test.each(["head", "base", "url", "layer", "stop", "order", "fresh", "repo"])("i
   expect(opened.box.heartbeat).toBeNull();
   expect(decisions(opened.box).size).toBe(0);
   expect(pending(opened.box)).toEqual([]);
-  expect(approvalBlockers("approve", 1, opened.box)).toEqual(["1 of 1 stops undecided"]);
   expect(await Bun.file(opened.paths.approved).exists()).toBe(false);
   // Late old-generation writers cannot contaminate the active review.
   await seed(first.paths, first.session.reviewId);

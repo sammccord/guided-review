@@ -246,18 +246,12 @@ export function decisions(box: Mailbox): Map<number, Decision> {
 
 export type CommentStatus = "none" | "pending" | "posted";
 
-export function approvalBlockers(verdict: Verdict, stopCount: number, box: Mailbox): string[] {
+export function approvalBlockers(verdict: Verdict, box: Mailbox): string[] {
   const blockers: string[] = [];
   if (verdict !== "approve") blockers.push(`verdict is ${verdict}`);
-  const latest = decisions(box);
-  for (const [stop, decision] of latest) {
-    if (decision !== "agree") blockers.push(`stop ${stop}: ${decision}`);
+  for (const [stop, decision] of decisions(box)) {
+    if (decision === "disagree") blockers.push(`stop ${stop}: disagree`);
   }
-  let undecided = 0;
-  for (let stop = 1; stop <= stopCount; stop++) {
-    if (!latest.has(stop)) undecided++;
-  }
-  if (undecided > 0) blockers.push(`${undecided} of ${stopCount} stops undecided`);
   return blockers;
 }
 
@@ -307,9 +301,9 @@ function agentText(status: AgentStatus): string {
   }
 }
 
-export function statusText(box: Mailbox, stopCount: number, now: number): string {
+export function statusText(box: Mailbox, now: number): string {
   const waiting = pending(box).length;
-  return `Decided ${decisions(box).size}/${stopCount} · ${waiting} waiting · ${agentText(agentStatus(box, now))}`;
+  return `${waiting} waiting · ${agentText(agentStatus(box, now))}`;
 }
 
 export type ReviewEnd = { kind: "finished" } | { kind: "closed" } | null;

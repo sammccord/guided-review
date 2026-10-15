@@ -159,8 +159,8 @@ const commands = new Map();
 let poll;
 globalThis.setInterval = (callback) => { poll = callback; return 1; };
 const notifications = [];
-const ctx = { notify: (text) => notifications.push(text), dialogs: { confirm: async () => true } };
-const access = { currentStop: () => null, stopCount: () => 0 };
+const ctx = { notify: (text) => notifications.push(text), dialogs: { confirm: async () => { throw new Error("Finish must not ask for confirmation"); } } };
+const access = { currentStop: () => null };
 registerQa({ on: (name, handler) => events.set(name, handler), registerCommand: (command, handler) => commands.set(command.id, handler) }, access);
 await openSession({ repo: dir, tourPath: tour, tour: ${JSON.stringify(tourData)} });
 await events.get("changeset_loaded")({}, ctx);
@@ -198,7 +198,7 @@ writeFileSync(dir + "/mode", "ok");
 poll();
 await Bun.sleep(150);
 assert.equal(calls().length, count);
-assert.deepEqual(notifications, ["Question sent to the agent", "Question sent to the agent", "Answered: Why?", "Review finished. The agent will draft the review from your decisions."]);
+assert.deepEqual(notifications, ["Question sent to the agent", "Question sent to the agent", "Answered: Why?", "Review finished. The agent will draft the review from your notes."]);
 console.log("reconciled");
 `;
     const child = Bun.spawn([process.execPath, "-e", script], {
@@ -324,7 +324,7 @@ describe("tour wait and answer", () => {
     const payload = json(stdout);
     expect(payload.kind).toBe("finished");
     expect(payload.decisions).toEqual([{ tour, stop: 2, decision: "unsure" }]);
-    expect(payload.approval).toEqual([{ tour, eligible: false, blockers: ["stop 2: unsure", "1 of 2 stops undecided"] }]);
+    expect(payload.approval).toEqual([{ tour, eligible: true, blockers: [] }]);
     expect(payload.transcript.map((entry: { request: Request; status: string }) => [entry.request.id, entry.status])).toEqual([
       ["q-1", "noted"],
       ["q-2", "pending"],
@@ -361,26 +361,24 @@ describe("tour wait and answer", () => {
     expect((await run(runApprove, ["missing.json"], dir)).result).toEqual({ kind: "exit", code: 1 });
   });
 
-  test.each(["open", "disagree", "unsure", "undecided", "verdict", "no-url"])("approve refuses %s before contacting GitHub", async (scenario) => {
+  test.each(["open", "disagree", "verdict", "no-url"])("approve refuses %s before contacting GitHub", async (scenario) => {
     const tour = join(dir, `refuse-${scenario}.tour.json`);
     const paths = mailboxPaths(tour);
     await writeJsonAtomic(tour, { ...tourData, verdict: scenario === "verdict" ? "discuss" : "approve", url: scenario === "no-url" ? undefined : tourData.url });
     await writeJsonAtomic(paths.session, session(tour, scenario === "open" ? {} : { finishedAt: "t9" }));
     await writeJsonAtomic(requestPath(paths, "q-1"), { ...decision(1, "agree"), stop: { ...stop, number: 1 } });
-    if (scenario !== "undecided") {
-      await writeJsonAtomic(requestPath(paths, "q-2"), decision(2, scenario === "disagree" ? "disagree" : scenario === "unsure" ? "unsure" : "agree"));
-      if (scenario === "disagree" || scenario === "unsure") {
-        await writeJsonAtomic(answerPath(paths, "q-2"), { id: "q-2", commentId: null, text: "Answered", at: "t8" });
-      }
+    await writeJsonAtomic(requestPath(paths, "q-2"), decision(2, scenario === "disagree" ? "disagree" : "agree"));
+    if (scenario === "disagree") {
+      await writeJsonAtomic(answerPath(paths, "q-2"), { id: "q-2", commentId: null, text: "Answered", at: "t8" });
     }
     const result = await run(runApprove, [tour], dir);
     expect(result.result).toEqual({ kind: "exit", code: 1 });
-    const reason = { open: "review has not ended", disagree: "stop 2: disagree", unsure: "stop 2: unsure", undecided: "1 of 2 stops undecided", verdict: "verdict is discuss", "no-url": "tour has no PR url" }[scenario];
+    const reason = { open: "review has not ended", disagree: "stop 2: disagree", verdict: "verdict is discuss", "no-url": "tour has no PR url" }[scenario];
     expect(result.stderr).toContain(reason!);
     expect(await Bun.file(paths.approved).exists()).toBe(false);
   });
 
-  test.each(["new", "existing", "cached", "moved", "failure", "bad-response"])("approve handles %s with a pinned head and retry record", async (scenario) => {
+  test.each(["new", "unsure", "silent", "existing", "cached", "moved", "failure", "bad-response"])("approve handles %s with a pinned head and retry record", async (scenario) => {
     const bin = mkdtempSync(join(dir, "approve-bin-"));
     const tour = join(bin, "approve.tour.json");
     const paths = mailboxPaths(tour);
@@ -388,8 +386,10 @@ describe("tour wait and answer", () => {
     const url = "https://github.example.com/o/r/pull/42#pullrequestreview-123";
     await writeJsonAtomic(tour, tourData);
     await writeJsonAtomic(paths.session, session(tour, { repo: bin, tourFingerprint: tourFingerprint(bin, tourData), closedAt: "t9" }));
-    await writeJsonAtomic(requestPath(paths, "q-1"), { ...decision(1, "agree"), stop: { ...stop, number: 1 } });
-    await writeJsonAtomic(requestPath(paths, "q-2"), decision(2, "agree"));
+    if (scenario !== "silent") {
+      await writeJsonAtomic(requestPath(paths, "q-1"), { ...decision(1, "agree"), stop: { ...stop, number: 1 } });
+      await writeJsonAtomic(requestPath(paths, "q-2"), decision(2, scenario === "unsure" ? "unsure" : "agree"));
+    }
     if (scenario === "cached") await writeJsonAtomic(paths.approved, { url, head: HEAD, at: "t8" });
     else await writeJsonAtomic(paths.approved, { url: "old", head: "aaa", at: "t0" });
     writeFileSync(join(bin, "gh"), `#!${process.execPath}
@@ -413,7 +413,8 @@ else console.log(JSON.stringify(${JSON.stringify(scenario === "bad-response" ? {
     try {
       const result = await run(runApprove, [tour, "--body", "Reviewed bounds."], dir);
       const calls = await Bun.file(callsPath).exists() ? (await Bun.file(callsPath).text()).trim().split("\n").map(json) : [];
-      const succeeds = ["new", "existing", "cached"].includes(scenario);
+      const posts = ["new", "unsure", "silent"].includes(scenario);
+      const succeeds = posts || ["existing", "cached"].includes(scenario);
       expect(result.result).toEqual({ kind: "exit", code: succeeds ? 0 : 1 });
       expect(calls).toHaveLength(scenario === "cached" ? 0 : scenario === "moved" || scenario === "failure" ? 1 : scenario === "existing" ? 3 : 4);
       if (scenario === "moved") expect(result.stderr).toContain(`PR head moved from ${HEAD} to ccc; re-run the review`);
@@ -423,14 +424,14 @@ else console.log(JSON.stringify(${JSON.stringify(scenario === "bad-response" ? {
         expect((await Bun.file(paths.approved).json()).head).toBe("aaa");
         return;
       }
-      expect(json(result.stdout)).toEqual({ status: scenario === "new" ? "approved" : "already-approved", url });
+      expect(json(result.stdout)).toEqual({ status: posts ? "approved" : "already-approved", url });
       expect(await Bun.file(paths.approved).json()).toMatchObject({ url, head: HEAD });
       if (scenario !== "cached") {
         expect(calls[0]).toEqual({ args: ["api", "--hostname", "github.example.com", "repos/o/r/pulls/42"], cwd: realpathSync(bin) });
         expect(calls[1].args).toEqual(["api", "--hostname", "github.example.com", "user", "--jq", ".login"]);
         expect(calls[2].args).toEqual(["api", "--hostname", "github.example.com", "--paginate", "--slurp", "repos/o/r/pulls/42/reviews"]);
       }
-      if (scenario === "new") expect(calls[3].args).toEqual(githubApproveArgs({ host: "github.example.com", owner: "o", repo: "r", number: 42 }, HEAD, "Reviewed bounds."));
+      if (posts) expect(calls[3].args).toEqual(githubApproveArgs({ host: "github.example.com", owner: "o", repo: "r", number: 42 }, HEAD, "Reviewed bounds."));
       expect(json((await run(runApprove, [tour], dir)).stdout)).toEqual({ status: "already-approved", url });
       expect(await Bun.file(callsPath).exists() ? (await Bun.file(callsPath).text()).trim().split("\n").length : 0).toBe(calls.length);
     } finally {
