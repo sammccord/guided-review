@@ -104,7 +104,7 @@ Answers one request from `wait`. The answer appears in Hunk as a note, threaded 
 
 You can run it by hand. Take the `id` from the `inbox/` file name, or from the `next` field of a `pending` result.
 
-For a **Post to PR** request, `--text` is the comment for the author. `tour answer` posts it through `gh api` as a review comment at the session's head commit, on the stop's anchor. Then it adds a Hunk note with the comment's GitHub link. The tour needs a PR `url`, and `gh` must be logged in to the PR's host.
+For a **Post finding to PR** (`comment`) or **Comment on PR** (`reviewer-comment`) request, `--text` is the comment for the author. For `reviewer-comment`, pass the request's `body` unchanged. `tour answer` posts it through `gh api` as a review comment at the session's head commit, on the stop's anchor. Then it adds a Hunk note with the comment's GitHub link. The tour needs a PR `url`, and `gh` must be logged in to the PR's host.
 
 Output:
 
@@ -128,7 +128,7 @@ Errors:
 | `tour answer: the Hunk session for this tour (pid <pid>) is not running; reopen the tour` | 1 |
 | `tour answer: hunk session failed: <error>` | 1 |
 
-A **Post to PR** answer posts to GitHub before it reaches Hunk. If Hunk is gone at that point, the command fails without recording the answer, and a retry posts the PR comment again.
+A `comment` or `reviewer-comment` answer posts to GitHub before it reaches Hunk. If Hunk is gone at that point, the command fails without recording the answer, and a retry posts the PR comment again.
 
 ## `tour approve`
 
@@ -185,15 +185,16 @@ Hunk and the agent never share a process. They exchange files under a directory 
 | `agent.json` | `tour wait` | the agent's process id and the time it promised to listen until |
 | `approved.json` | `tour approve` | approval URL, reviewed head, and time |
 
-A request id reads `q-<review-id>-<seq>`. A request is one of five kinds:
+A request id reads `q-<review-id>-<seq>`. A request is one of six kinds:
 
 | `kind` | Sent by | Fields beyond `id`, `seq`, `at`, `stop` |
 | --- | --- | --- |
 | `question` | a new note in Hunk | `noteId`, `anchor`, `text` |
 | `followup` | a reply under a recorded reviewer note, an agent answer, or a waiting placeholder | `noteId`, `parentId`, `anchor`, `text` |
-| `ask` | `Q` | `anchor`, `text` |
-| `decision` | `V` or the **Decide** button | `decision` (`agree`, `disagree`, or `unsure`), `comment` |
-| `comment` | the **Post to PR** button | `body` |
+| `ask` | `Q` or the **Ask agent** button | `anchor`, `text` |
+| `decision` | `V` | `decision` (`agree`, `disagree`, or `unsure`), `comment` |
+| `comment` | the **Post finding to PR** button | `body` |
+| `reviewer-comment` | `C` or the **Comment on PR** button | `body`, the reviewer's text to post unchanged |
 
 An `anchor` is `{path, side, line}`. `stop` is the stop that was current when the request was sent, or `null` when no stop was current.
 

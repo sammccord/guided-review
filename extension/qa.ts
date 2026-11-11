@@ -62,13 +62,12 @@ const TUI_POLL_MS = 2000;
 const ACTIVITY_WRITE_MS = 15_000;
 const STATUS_ID = "qa";
 
-export const QA_KEYS = { decide: "V", ask: "Q", finish: "F" } as const;
+export const QA_KEYS = { ask: "Q", comment: "C", decide: "V", finish: "F" } as const;
 
-export function qaHint(keybindings?: Partial<ExtensionPaneProps["keybindings"]>): string {
-  return Object.entries(QA_KEYS).flatMap(([command, defaultKey]) => {
-    const keys = keybindings?.getKeys?.(`guided-review.${command}`) ?? [defaultKey];
-    return keys.length ? [`${keys.join("/")} ${command}`] : [];
-  }).join(" · ");
+/** Button text for a command, with its current key unless the command is unbound. */
+export function actionLabel(title: string, command: keyof typeof QA_KEYS, keybindings?: Partial<ExtensionPaneProps["keybindings"]>): string {
+  const keys = keybindings?.getKeys?.(`guided-review.${command}`) ?? [QA_KEYS[command]];
+  return `[ ${[title, ...(keys.length ? [keys.join("/")] : [])].join(" · ")} ]`;
 }
 
 export const QA_USAGE = [
@@ -456,7 +455,7 @@ export async function runAnswer(args: readonly string[], ctx: ExtensionCliComman
     }
   }
   let text = parsed.text;
-  if (request.kind === "comment") {
+  if (request.kind === "comment" || request.kind === "reviewer-comment") {
     try {
       const tour: unknown = JSON.parse(await readFile(box.session.tourPath, "utf8"));
       const target =
@@ -635,15 +634,15 @@ function selectedAnchor(ctx: ExtensionCommandContext): Anchor | null {
 
 const NO_TOUR = "No tour loaded. Start one with `hunk tour open <tour.json>`.";
 
-async function ask(ctx: ExtensionCommandContext, access: TourAccess) {
+async function ask(ctx: Pick<ExtensionCommandContext, "dialogs" | "notify">, selected: Anchor | null, entry: TourStop | null) {
   touchActivity();
   const { paths } = state;
   if (!paths) {
     ctx.notify(NO_TOUR, "warning");
     return;
   }
-  const stop = currentStopRef(access);
-  const anchor = selectedAnchor(ctx) ?? stop?.anchor ?? null;
+  const stop = entry ? stopRef(entry) : null;
+  const anchor = selected ?? stop?.anchor ?? null;
   if (!anchor) {
     ctx.notify("Move to a line first", "warning");
     return;
@@ -675,11 +674,32 @@ async function decide(ctx: Pick<ExtensionCommandContext, "dialogs" | "notify">, 
   ctx.notify(`Stop ${stop.number}: ${decision}`);
 }
 
-export async function requestDecision(entry: TourStop): Promise<void> {
-  if (host) await decide(host, entry);
+export async function requestAsk(entry: TourStop): Promise<void> {
+  if (host) await ask(host, null, entry);
 }
 
-async function finish(ctx: ExtensionCommandContext) {
+async function commentOnPr(ctx: Pick<ExtensionCommandContext, "dialogs" | "notify">, entry: TourStop | null) {
+  touchActivity();
+  const { paths } = state;
+  if (!paths) {
+    ctx.notify(NO_TOUR, "warning");
+    return;
+  }
+  if (!entry) {
+    ctx.notify("No current stop. Press > to start the tour.");
+    return;
+  }
+  const text = await ctx.dialogs.input({ title: `Comment on PR at stop ${entry.number}`, placeholder: "Your comment, posted as written" });
+  if (text === null || text.trim() === "") return;
+  await writeRequest(paths, { kind: "reviewer-comment", stop: stopRef(entry), body: text.trim() });
+  ctx.notify("Sent to the agent to post");
+}
+
+export async function requestReviewerComment(entry: TourStop): Promise<void> {
+  if (host) await commentOnPr(host, entry);
+}
+
+export async function finish(ctx: Pick<ExtensionCommandContext, "notify">) {
   if (!state.session) {
     ctx.notify(NO_TOUR, "warning");
     return;
@@ -745,7 +765,8 @@ export function registerQa(hunk: HunkExtensionAPI, access: TourAccess) {
     if (poller) clearInterval(poller);
     close();
   });
-  hunk.registerCommand({ id: "ask", title: "Ask the agent", key: QA_KEYS.ask }, (ctx) => ask(ctx, access));
-  hunk.registerCommand({ id: "decide", title: "Decide this stop", key: QA_KEYS.decide }, (ctx) => decide(ctx, access.currentStop()));
+  hunk.registerCommand({ id: "ask", title: "Ask the agent", key: QA_KEYS.ask }, (ctx) => ask(ctx, selectedAnchor(ctx), access.currentStop()));
+  hunk.registerCommand({ id: "comment", title: "Comment on PR", key: QA_KEYS.comment }, (ctx) => commentOnPr(ctx, access.currentStop()));
+  hunk.registerCommand({ id: "decide", title: "Mark this stop (agree/disagree/unsure)", key: QA_KEYS.decide }, (ctx) => decide(ctx, access.currentStop()));
   hunk.registerCommand({ id: "finish", title: "Finish review", key: QA_KEYS.finish }, (ctx) => finish(ctx));
 }

@@ -150,8 +150,9 @@ These keys work while a tour is open in Hunk:
 | `(` | Start of the current track, then the previous track | guided-review |
 | `L` | Follow a link from the current stop. With more than one link, Hunk asks which. | guided-review |
 | `B` | Back to the stop you left by following a link | guided-review |
-| `V` | Decide the current stop as agree, disagree, or unsure, with an optional comment | guided-review |
-| `Q` | Ask the agent a question about the current line | guided-review |
+| `Q` | Ask the agent a question about the current stop | guided-review |
+| `C` | Comment on the PR at the current stop. Your text is posted as written | guided-review |
+| `V` | **Mark this stop** as agree, disagree, or unsure, with an optional comment | guided-review |
 | none | **Restart tour**, from the **Extensions** menu | guided-review |
 | `F` | **Finish review**. Asks the agent to draft the review | guided-review |
 | `{` `}` | Previous or next annotated hunk | Hunk |
@@ -164,11 +165,11 @@ Clicking a stop in the **Tour** pane jumps to it. Clicking a link row follows th
 
 ## Talk to the agent from Hunk
 
-While the tour is open, the agent that wrote it waits for you. `V` records your decision on a stop. **Decide** beside **Post to PR** does the same and shows the latest decision. Decisions are optional. Silence means agreement with the agent's verdict and the stop's framing. The muted hint below **Ask:** lists the current decide, ask, and finish keys. `Q` asks about the current line. `c` adds a note, and every note goes to the agent. A reply under one of the agent's answers is a follow-up. Answers appear as threaded notes in the diff. The **Tour** pane shows how many questions wait and whether the agent is listening. Each decided stop gets a badge. `✓` is agree, `✗` is disagree, and `?` is unsure. Press `F` to finish, or quit Hunk. The agent then drafts the review from your notes, decisions, and the conversation.
+While the tour is open, the agent that wrote it waits for you. The current stop has three buttons, each showing its key: **Ask agent** (`Q`), **Comment on PR** (`C`), and **Post finding to PR**. `V` marks a stop agree, disagree, or unsure. It has no button and goes to the agent only, not the PR. Marks are optional. Silence means agreement with the agent's verdict and the stop's framing. `c` adds a note, and every note goes to the agent. A reply under one of the agent's answers is a follow-up. Answers appear as threaded notes in the diff. The **Tour** pane shows how many questions wait and whether the agent is listening. Each decided stop gets a badge. `✓` is agree, `✗` is disagree, and `?` is unsure. Press `F` or click **Finish review** in the pane header to finish, or quit Hunk. The agent then drafts the review from your notes, decisions, and the conversation.
 
 Requests and answers are JSON files in a `.tour.qa` directory beside the tour file. The review's `cleanup` command removes it.
 
-Click **Post to PR** on the current stop to have the agent reword it for the author, post a PR line comment, and confirm in Hunk with the link.
+**Comment on PR** opens an input and posts your text, unchanged, as a PR line comment at the current stop. **Post finding to PR** has the agent reword the stop's finding for the author and post that. Both confirm in Hunk with the link.
 
 ## Repository layout
 

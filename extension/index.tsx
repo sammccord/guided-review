@@ -43,7 +43,7 @@ import {
   type Verdict,
 } from "../core/src/index";
 import { readDiffRanges } from "../core/src/git";
-import { decisionBadge, openSession, qaHint, QA_KEYS, QA_USAGE, registerQa, requestComment, requestDecision, runAnswer, runApprove, runWait, useMailbox, useSpinnerFrame, useWaiting, type TourAccess } from "./qa";
+import { actionLabel, decisionBadge, finish, openSession, QA_KEYS, QA_USAGE, registerQa, requestAsk, requestComment, requestReviewerComment, runAnswer, runApprove, runWait, useMailbox, useSpinnerFrame, useWaiting, type TourAccess } from "./qa";
 import { toSidecar } from "./sidecar";
 import { groupFilesByDirectory } from "./files";
 import { pinTourRefs } from "./session";
@@ -413,13 +413,15 @@ function StopRow({
   related,
   decision,
   waiting,
-  comment,
+  finding,
+  reviewerComment,
   links,
   theme,
   onSelect,
   onFollow,
-  onComment,
-  onDecide,
+  onAsk,
+  onReviewerComment,
+  onFinding,
   keybindings,
 }: {
   stop: Stop;
@@ -430,16 +432,31 @@ function StopRow({
   related: boolean;
   decision: Decision | undefined;
   waiting: string;
-  comment: CommentStatus;
+  finding: CommentStatus;
+  reviewerComment: CommentStatus;
   links: StopIndex;
   theme: ExtensionPaneTheme;
   onSelect: () => void;
   onFollow: (target: TourStop) => void;
-  onComment: () => void;
-  onDecide: () => void;
+  onAsk: () => void;
+  onReviewerComment: () => void;
+  onFinding: () => void;
   keybindings: Partial<ExtensionPaneProps["keybindings"]> | undefined;
 }) {
   const bg = current ? theme.selectedHunk : theme.panel;
+  const buttons = [
+    { label: actionLabel("Ask agent", "ask", keybindings), fg: theme.accent, onPress: onAsk },
+    {
+      label: reviewerComment === "none" ? actionLabel("Comment on PR", "comment", keybindings) : reviewerComment === "pending" ? "Posting comment…" : "✓ Comment posted",
+      fg: reviewerComment === "none" ? theme.accent : theme.muted,
+      onPress: reviewerComment === "none" ? onReviewerComment : null,
+    },
+    {
+      label: finding === "none" ? "[ Post finding to PR ]" : finding === "pending" ? "Posting to PR…" : "✓ Posted to PR",
+      fg: finding === "none" ? theme.accent : theme.muted,
+      onPress: finding === "none" ? onFinding : null,
+    },
+  ];
   return (
     <box id={`tour-stop-${index}`} style={{ flexDirection: "column", backgroundColor: bg }} onMouseDown={onSelect}>
       <box style={{ paddingLeft: 1, paddingRight: 1, backgroundColor: bg }}>
@@ -462,40 +479,29 @@ function StopRow({
             <LinkedText
               text={stop.ask}
               links={links}
-              prefix="Ask: "
+              prefix="To confirm: "
               fg={theme.noteBorder}
               bg={bg}
               theme={theme}
               attributes={TextAttributes.BOLD}
             />
           </box>
-          <text content={qaHint(keybindings)} fg={theme.muted} bg={bg} wrapMode="word" />
           <LinkRows label="Links" arrow="→" targets={links.linksFrom(index)} bg={bg} theme={theme} onFollow={onFollow} />
           <LinkRows label="Linked from" arrow="←" targets={links.linksTo(index)} bg={bg} theme={theme} onFollow={onFollow} />
-          <box style={{ flexDirection: "row", marginTop: 1, backgroundColor: bg }}>
-            <box
-              style={{ marginRight: 1, backgroundColor: bg }}
-              onMouseDown={(event: MouseEvent) => event.stopPropagation()}
-              onMouseUp={(event: MouseEvent) => {
-                event.stopPropagation();
-                onDecide();
-              }}
-            >
-              <text content={decision ? `[ Decide: ${decision} ]` : "[ Decide ]"} fg={theme.accent} bg={bg} />
-            </box>
-            <box
-              style={{ backgroundColor: bg }}
-              onMouseDown={(event: MouseEvent) => {
-                event.stopPropagation();
-                if (comment === "none") onComment();
-              }}
-            >
-              <text
-                content={comment === "none" ? "[ Post to PR ]" : comment === "pending" ? "Posting to PR…" : "✓ Posted to PR"}
-                fg={comment === "none" ? theme.accent : theme.muted}
-                bg={bg}
-              />
-            </box>
+          <box style={{ flexDirection: "row", flexWrap: "wrap", marginTop: 1, backgroundColor: bg }}>
+            {buttons.map(({ label, fg, onPress }) => (
+              <box
+                key={label}
+                style={{ marginRight: 1, backgroundColor: bg }}
+                onMouseDown={(event: MouseEvent) => event.stopPropagation()}
+                onMouseUp={(event: MouseEvent) => {
+                  event.stopPropagation();
+                  onPress?.();
+                }}
+              >
+                <text content={label} fg={fg} bg={bg} />
+              </box>
+            ))}
           </box>
         </box>
       ) : null}
@@ -617,6 +623,16 @@ function TourPane({ files, theme, actions, keybindings }: ExtensionPaneProps): R
         <box style={{ paddingLeft: 1, paddingRight: 1 }}>
           <text content={`${frame ? `${frame} ` : ""}${statusText(mailbox, Date.now())}`} fg={theme.muted} wrapMode="word" />
         </box>
+        <box
+          style={{ paddingLeft: 1, paddingRight: 1 }}
+          onMouseDown={(event: MouseEvent) => event.stopPropagation()}
+          onMouseUp={(event: MouseEvent) => {
+            event.stopPropagation();
+            void finish(actions);
+          }}
+        >
+          <text content={actionLabel("Finish review", "finish", keybindings)} fg={current === stops.length - 1 ? theme.accent : theme.muted} />
+        </box>
         {tour.stack ? <StackBlock stack={tour.stack} theme={theme} /> : null}
         <box style={{ marginTop: 1, paddingLeft: 1, paddingRight: 1 }}>
           <BulletedText text={tour.summary} links={links} fg={theme.text} theme={theme} />
@@ -647,14 +663,16 @@ function TourPane({ files, theme, actions, keybindings }: ExtensionPaneProps): R
                   related={related.has(entry)}
                   decision={decided.get(entry.number)}
                   waiting={waitingStops.has(entry.number) ? frame : ""}
-                  comment={commentStatus(mailbox, entry.number)}
+                  finding={commentStatus(mailbox, entry.number, "comment")}
+                  reviewerComment={commentStatus(mailbox, entry.number, "reviewer-comment")}
                   links={links}
                   theme={theme}
                   keybindings={keybindings}
-                  onDecide={() => void requestDecision(entry)}
+                  onAsk={() => void requestAsk(entry)}
+                  onReviewerComment={() => void requestReviewerComment(entry)}
                   onSelect={() => go({ kind: "goto", index })}
                   onFollow={follow}
-                  onComment={() => {
+                  onFinding={() => {
                     void requestComment(entry);
                     actions.notify("Sent to the agent to post");
                   }}

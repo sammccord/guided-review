@@ -95,7 +95,7 @@ The top-level object.
 | --- | --- | --- | --- |
 | `version` | number | yes | Must be `1` (`TOUR_VERSION`). |
 | `title` | string | yes | Non-empty. |
-| `url` | string | no | Non-empty when present. **Post to PR** and `tour approve` need a PR URL such as `https://<host>/<owner>/<repo>/pull/<number>`. |
+| `url` | string | no | Non-empty when present. **Post finding to PR**, **Comment on PR**, and `tour approve` need a PR URL such as `https://<host>/<owner>/<repo>/pull/<number>`. |
 | `base` | string | yes | Non-empty. A commit SHA or ref that `git` resolves in the directory where `tour check` runs. |
 | `head` | string | yes | Non-empty. Same as `base`. The reviewed diff is `git diff <base>...<head>`. |
 | `verdict` | string | yes | One of `approve`, `request-changes`, `discuss` (`VERDICTS`). |

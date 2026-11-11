@@ -132,7 +132,7 @@ Because `tour check` and `tour open` run `git diff <base>...<head>` in the curre
 
 Reopening an unchanged tour resumes its decisions and questions. To start over, add `--fresh` to `tour open` or `open-tour.sh`.
 
-Before `hunk tour wait` writes a heartbeat for this review, the **Tour** pane reads `<n> waiting · no agent yet`. Requests from notes, `Q`, `V`, and **Post to PR** wait in the mailbox. You can answer them yourself with `hunk tour answer` while Hunk is open. The [command reference](cli.md) lists every subcommand.
+Before `hunk tour wait` writes a heartbeat for this review, the **Tour** pane reads `<n> waiting · no agent yet`. Requests from notes, `Q`, `C`, `V`, and **Post finding to PR** wait in the mailbox. You can answer them yourself with `hunk tour answer` while Hunk is open. The [command reference](cli.md) lists every subcommand.
 
 To load the extension in every Hunk session without `--extension`, install it into Hunk:
 
@@ -247,7 +247,7 @@ If you run `tour check` in a directory where `base` and `head` do not resolve, i
 
 ### `tour has no PR url`
 
-**Post to PR** and approval need the tour's `url` field set to a PR URL such as `https://<host>/<owner>/<repo>/pull/<number>`. Add it, reopen the tour, and try again. `gh` must be logged in to that host. Check with `gh auth status --hostname <host>`.
+**Post finding to PR**, **Comment on PR**, and approval need the tour's `url` field set to a PR URL such as `https://<host>/<owner>/<repo>/pull/<number>`. Add it, reopen the tour, and try again. `gh` must be logged in to that host. Check with `gh auth status --hostname <host>`.
 
 ### `review has not ended; finish or close Hunk first`
 

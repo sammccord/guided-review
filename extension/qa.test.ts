@@ -5,7 +5,7 @@ import { join } from "node:path";
 import type { ExtensionCliCommandContext, ExtensionCliCommandResult } from "hunkdiff/extension";
 import type { Decision, Request, SessionRecord, Tour } from "../core/src/index";
 import { answerPath, mailboxPaths, requestPath, writeJsonAtomic } from "../core/src/mailbox";
-import { githubApproveArgs, githubCommentArgs, parsePullRequestUrl, qaHint, runAnswer, runApprove, runWait, sessionAddArgs, sessionIdForPid } from "./qa";
+import { actionLabel, githubApproveArgs, githubCommentArgs, parsePullRequestUrl, runAnswer, runApprove, runWait, sessionAddArgs, sessionIdForPid } from "./qa";
 import { tourFingerprint } from "./session";
 
 const anchor = { path: "src/a.ts", side: "new" as const, line: 10 };
@@ -17,12 +17,11 @@ const tourData: Tour = {
   tracks: [{ title: "Bounds", summary: "- Check bounds.", stops: [1, 2].map(() => ({ ...anchor, kind: "inspect", title: stop.title, ask: stop.ask, body: "- Bound." })) }],
 };
 
-test("QA hints use resolved bindings, omit unbound commands, and fall back on older hosts", () => {
-  expect(qaHint()).toBe("V decide · Q ask · F finish");
-  expect(qaHint({})).toBe("V decide · Q ask · F finish");
-  expect(qaHint({ getKeys: (id) => id === "guided-review.decide" ? ["D", "ctrl+d"] : id === "guided-review.finish" ? ["X"] : [] }))
-    .toBe("D/ctrl+d decide · X finish");
-  expect(qaHint({ getKeys: () => [] })).toBe("");
+test("action labels show resolved keys, drop unbound keys, and fall back on older hosts", () => {
+  expect(actionLabel("Ask agent", "ask")).toBe("[ Ask agent · Q ]");
+  expect(actionLabel("Comment on PR", "comment", {})).toBe("[ Comment on PR · C ]");
+  expect(actionLabel("Finish review", "finish", { getKeys: () => ["X", "ctrl+x"] })).toBe("[ Finish review · X/ctrl+x ]");
+  expect(actionLabel("Ask agent", "ask", { getKeys: () => [] })).toBe("[ Ask agent ]");
 });
 
 describe("sessionAddArgs", () => {
@@ -471,7 +470,12 @@ else console.log(JSON.stringify(${JSON.stringify(scenario === "bad-response" ? {
     }
   });
 
-  test.each([false, true])("comment answer posts to GitHub before Hunk, gh failure=%s", async (failGh) => {
+  test.each([
+    ["comment", "Posted to PR: Loop bound", false],
+    ["comment", "Posted to PR: Loop bound", true],
+    ["reviewer-comment", "Commented on PR: Loop bound", false],
+    ["reviewer-comment", "Commented on PR: Loop bound", true],
+  ] as const)("%s answer posts to GitHub before Hunk, summary=%s gh failure=%s", async (kind, summary, failGh) => {
     const bin = mkdtempSync(join(dir, "bin-"));
     const tour = join(bin, "post.tour.json");
     const paths = mailboxPaths(tour);
@@ -480,7 +484,7 @@ else console.log(JSON.stringify(${JSON.stringify(scenario === "bad-response" ? {
     const htmlUrl = "https://github.example.com/o/r/pull/42#discussion_r123";
     await writeJsonAtomic(tour, { url: "https://github.example.com/o/r/pull/42" });
     await writeJsonAtomic(paths.session, session(tour, { repo: bin }));
-    await writeJsonAtomic(requestPath(paths, "q-1"), { id: "q-1", seq: 1, at: "t1", kind: "comment", stop, body: "- Extra attempt." });
+    await writeJsonAtomic(requestPath(paths, "q-1"), { id: "q-1", seq: 1, at: "t1", kind, stop, body: "- Extra attempt." });
     for (const command of ["gh", "hunk"]) {
       writeFileSync(join(bin, command), `#!${process.execPath}
 import { appendFileSync } from "node:fs";
@@ -516,7 +520,7 @@ console.log(JSON.stringify("${command}" === "gh"
         expect(result.result).toEqual({ kind: "exit", code: 0 });
         expect(result.stderr).toBe("");
         expect(calls.map((call) => call.command)).toEqual(["gh", "hunk", "hunk"]);
-        expect(calls[2].args).toEqual(sessionAddArgs({ kind: "anchored", anchor, summary: "Posted to PR: Loop bound", rationale: `${text}\n\n${htmlUrl}` }, "mine"));
+        expect(calls[2].args).toEqual(sessionAddArgs({ kind: "anchored", anchor, summary, rationale: `${text}\n\n${htmlUrl}` }, "mine"));
         expect(await Bun.file(answerPath(paths, "q-1")).json()).toMatchObject({ id: "q-1", commentId: "mcp:42", text });
         expect(json((await run(runAnswer, [tour, "q-1", "--text", text], dir)).stdout).status).toBe("already-answered");
         expect((await Bun.file(callsPath).text()).trim().split("\n")).toHaveLength(3);

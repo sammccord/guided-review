@@ -49,6 +49,8 @@ const samples = {
     ({ ...base(seq), kind: "decision", stop: stopRef, decision: "agree", comment: "", ...rest }) as Of<"decision">,
   comment: (seq: number, rest: Partial<Of<"comment">> = {}): Of<"comment"> =>
     ({ ...base(seq), kind: "comment", stop: stopRef, body: "- Runs one extra attempt.\n- Test pins the wrong bound.", ...rest }) as Of<"comment">,
+  "reviewer-comment": (seq: number, rest: Partial<Of<"reviewer-comment">> = {}): Of<"reviewer-comment"> =>
+    ({ ...base(seq), kind: "reviewer-comment", stop: stopRef, body: "Use < here.", ...rest }) as Of<"reviewer-comment">,
 };
 
 function request<K extends Request["kind"]>(seq: number, { kind, ...rest }: { kind: K } & Partial<Of<K>>): Request {
@@ -79,6 +81,7 @@ describe("parse", () => {
       request(3, { kind: "ask", stop: stopRef }),
       request(4, { kind: "decision", decision: "disagree", comment: "no" }),
       request(5, { kind: "comment" }),
+      request(6, { kind: "reviewer-comment" }),
     ];
     for (const sample of samples) expect(parseRequest(JSON.parse(JSON.stringify(sample)))).toEqual(sample);
     expect(parseRequest(null)).toBeNull();
@@ -92,6 +95,8 @@ describe("parse", () => {
     expect(parseRequest({ ...request(1, { kind: "comment" }), stop: undefined })).toBeNull();
     expect(parseRequest({ ...request(1, { kind: "comment" }), body: undefined })).toBeNull();
     expect(parseRequest({ ...request(1, { kind: "comment" }), body: 7 })).toBeNull();
+    expect(parseRequest({ ...request(1, { kind: "reviewer-comment" }), stop: null })).toBeNull();
+    expect(parseRequest({ ...request(1, { kind: "reviewer-comment" }), body: 7 })).toBeNull();
   });
 
   test("generation-qualified request IDs and session identities round-trip without accepting paths", () => {
@@ -176,7 +181,7 @@ test("placeholder replies extend existing Q&A threads", () => {
 });
 
 describe("placeholders", () => {
-  test.each(["question", "followup", "ask", "decision", "comment"] as const)("%s uses the answer target with static text", (kind) => {
+  test.each(["question", "followup", "ask", "decision", "comment", "reviewer-comment"] as const)("%s uses the answer target with static text", (kind) => {
     const item = samples[kind](1);
     expect(placeholderPlan(item)).toEqual({ ...postPlan(item, "answer"), summary: PLACEHOLDER_TEXT, rationale: "" });
   });
@@ -208,6 +213,7 @@ describe("projections", () => {
     expect(needsReply(request(1, { kind: "decision", decision: "disagree", comment: "" }))).toBe(true);
     expect(needsReply(request(1, { kind: "ask" }))).toBe(true);
     expect(needsReply(request(1, { kind: "comment" }))).toBe(true);
+    expect(needsReply(request(1, { kind: "reviewer-comment" }))).toBe(true);
   });
 
   test("pending lists unanswered requests that need a reply, by seq", () => {
@@ -234,19 +240,28 @@ describe("projections", () => {
   });
 
   test("commentStatus tracks comments per stop, with posted taking precedence", () => {
-    expect(commentStatus(emptyMailbox(), 2)).toBe("none");
-    expect(commentStatus(mailbox(requests, [answer("q-3")]), 2)).toBe("none");
+    expect(commentStatus(emptyMailbox(), 2, "comment")).toBe("none");
+    expect(commentStatus(mailbox(requests, [answer("q-3")]), 2, "comment")).toBe("none");
     const comments = [request(1, { kind: "comment" }), request(2, { kind: "comment" })];
-    expect(commentStatus(mailbox(comments), 2)).toBe("pending");
-    expect(commentStatus(mailbox(comments, [answer("q-1")]), 2)).toBe("posted");
-    expect(commentStatus(mailbox(comments, [answer("q-2")]), 2)).toBe("posted");
-    expect(commentStatus(mailbox(comments, [answer("q-1")]), 3)).toBe("none");
+    expect(commentStatus(mailbox(comments), 2, "comment")).toBe("pending");
+    expect(commentStatus(mailbox(comments, [answer("q-1")]), 2, "comment")).toBe("posted");
+    expect(commentStatus(mailbox(comments, [answer("q-2")]), 2, "comment")).toBe("posted");
+    expect(commentStatus(mailbox(comments, [answer("q-1")]), 3, "comment")).toBe("none");
+  });
+
+  test("commentStatus keeps findings and reviewer comments apart", () => {
+    const both = [request(1, { kind: "comment" }), request(2, { kind: "reviewer-comment" })];
+    expect(commentStatus(mailbox(both), 2, "comment")).toBe("pending");
+    expect(commentStatus(mailbox(both, [answer("q-2")]), 2, "comment")).toBe("pending");
+    expect(commentStatus(mailbox(both, [answer("q-2")]), 2, "reviewer-comment")).toBe("posted");
+    expect(commentStatus(mailbox([both[0]!]), 2, "reviewer-comment")).toBe("none");
   });
 
   test("requestLabel names a request in one line", () => {
     expect(requestLabel(request(1, { kind: "ask", text: "x".repeat(100) }))).toBe(`${"x".repeat(79)}…`);
     expect(requestLabel(request(4, { kind: "decision", decision: "disagree", comment: "nope" }))).toBe("Stop 2 · disagree: nope");
     expect(requestLabel(request(5, { kind: "comment" }))).toBe("Post to PR: #2 Loop bound");
+    expect(requestLabel(request(6, { kind: "reviewer-comment", body: "Use < here." }))).toBe("Comment on PR: Use < here.");
   });
 });
 
@@ -375,5 +390,15 @@ describe("postPlan", () => {
     expect(postPlan(request(7, { kind: "comment", stop: { ...stopRef, title: "x".repeat(90) } }), text).summary).toBe(
       `Posted to PR: ${"x".repeat(65)}…`,
     );
+  });
+
+  test("reviewer comments confirm at the stop with the verbatim text and URL", () => {
+    const text = "Use < here.\n\nhttps://github.com/o/r/pull/1#discussion_r3";
+    expect(postPlan(request(8, { kind: "reviewer-comment" }), text)).toEqual({
+      kind: "anchored",
+      anchor,
+      summary: "Commented on PR: Loop bound",
+      rationale: text,
+    });
   });
 });
