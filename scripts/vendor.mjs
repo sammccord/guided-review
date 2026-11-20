@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SOURCE_DIRS = ["core/src", "cli"];
+const SKILL_FILES = ["SKILL.md", "references/lenses.md", "scripts/prepare.py"];
 const SOURCE_URL = "https://github.com/sammccord/guided-review";
 
 function sources(dir) {
@@ -22,8 +23,8 @@ if (!dest) {
   console.error("usage: scripts/vendor.mjs <destination directory>");
   process.exit(2);
 }
-if (execFileSync("git", ["-C", root, "status", "--porcelain", "--", ...SOURCE_DIRS], { encoding: "utf8" }).trim()) {
-  console.error("vendor: commit changes under core/src and cli first so the recorded commit matches the files");
+if (execFileSync("git", ["-C", root, "status", "--porcelain", "--", ...SOURCE_DIRS, ...SKILL_FILES], { encoding: "utf8" }).trim()) {
+  console.error("vendor: commit changes under core/src, cli, and the skill files first so the recorded commit matches the files");
   process.exit(1);
 }
 
@@ -31,7 +32,7 @@ const commit = execFileSync("git", ["-C", root, "rev-parse", "HEAD"], { encoding
 const out = resolve(dest);
 rmSync(out, { recursive: true, force: true });
 const files = {};
-for (const file of SOURCE_DIRS.flatMap(sources)) {
+for (const file of [...SOURCE_DIRS.flatMap(sources), ...SKILL_FILES]) {
   mkdirSync(dirname(join(out, file)), { recursive: true });
   cpSync(join(root, file), join(out, file));
   files[file] = createHash("sha256").update(readFileSync(join(root, file))).digest("hex");
