@@ -18,7 +18,9 @@ Renderer-independent logic for guided-review tours. An agent writes a tour file.
 | `validate.ts` | `validateTour`, which parses, loads the diff ranges, and checks anchors, then returns `checkStopSize` and `checkBullets` warnings, plus `ValidateResult` |
 | `navigator.ts` | `initialCursor` and `move`, a pure reducer over `next`, `prev`, `nextTrack`, `prevTrack`, `goto`, `restart`, `follow`, and `back`, plus `TourCursor`, `TourMove`, and `MoveResult` |
 | `qa.ts` | The reviewer-to-agent Q&A model: `Request` (`question`, `followup`, `ask`, `decision`), `Answer`, `Heartbeat`, `SessionRecord`, `Mailbox`, the `parse*` boundary functions, and the projections `classifyNote`, `needsReply`, `pending`, `decisions`, `agentStatus`, `statusText`, `reviewEnd`, `postPlan`, `transcript`, `requestLabel` |
-| `mailbox.ts` | `mailboxPaths`, `readMailbox`, `writeJsonAtomic`, `writeJsonAtomicSync`, `nextSeq`, `requestPath`, `answerPath`, the mailbox directory beside a tour. It needs Node, so `@guided-review/core/mailbox` exports it and the index does not. |
+| `requests.ts` | `RequestBody`, `stopRef`, `nextSeq`, and `buildRequest`: frozen stop references, request sequences, and generation-qualified request ids without I/O. |
+| `mailbox-port.ts` | `MailboxPort`, `readMailboxVia`, `resolveLayoutVia`, `postRequestVia`, `patchSessionVia`, and `encodeJson`: shared mailbox protocol over asynchronous text reads, directory listings, and writes; incomplete JSON records are skipped. |
+| `mailbox.ts` | `fsPort`, `mailboxPaths`, `readMailbox`, `writeJsonAtomic`, `writeJsonAtomicSync`, `requestPath`, and `answerPath`: the Node adapter with atomic writes and synchronous pointer resolution. `@guided-review/core/mailbox` exports it; the index does not. |
 | `layout.ts` | `reviewLayout`, `currentPointerPath`, `requestFile`, `answerFile`, and `ReviewLayout`: pure POSIX mailbox paths without filesystem access, available from the index. |
 | `git.ts` | `readDiffRanges`, which runs `git diff base...head`. It needs Node, so `@guided-review/core/git` exports it and the index does not. |
 | `index.ts` | Everything above except `mailbox.ts` and `git.ts` |

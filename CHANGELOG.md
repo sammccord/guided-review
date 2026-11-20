@@ -25,6 +25,7 @@ This file lists all notable changes to this project. The format follows [Keep a 
 
 ### Changed
 
+- Core shares request building and mailbox reads and writes through a browser-safe port, with Node filesystem access provided by `fsPort`.
 - Core exports pure mailbox layout helpers for browser renderers; filesystem-backed mailbox access remains a separate Node entry point.
 - Agent answers use the host's note sink; hosts without notes record answers without invoking Hunk.
 - Review sessions can omit a host process id and end explicitly through `finishedAt` or `closedAt`.

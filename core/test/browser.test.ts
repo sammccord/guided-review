@@ -18,4 +18,6 @@ test("the core index's transitive relative imports contain no node built-ins", (
   }
   expect(visited.has(resolve(import.meta.dir, "../src/layout.ts"))).toBe(true);
   expect(visited.has(resolve(import.meta.dir, "../src/qa.ts"))).toBe(true);
+  expect(visited.has(resolve(import.meta.dir, "../src/requests.ts"))).toBe(true);
+  expect(visited.has(resolve(import.meta.dir, "../src/mailbox-port.ts"))).toBe(true);
 });

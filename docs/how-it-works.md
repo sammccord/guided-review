@@ -123,6 +123,8 @@ In Hunk, a stack tour lists every layer under the verdict and marks the one unde
 
 ## The core library holds the tour logic
 
+Mailbox access uses `MailboxPort`: asynchronous text reads, directory listings, and text writes. `readMailboxVia`, `resolveLayoutVia`, `postRequestVia`, and `patchSessionVia` share the protocol across hosts; `requests.ts` builds requests without I/O. Node supplies `fsPort` with atomic writes. Other hosts can use relative POSIX paths and non-atomic writes; readers skip incomplete JSON until the next read. Hosts own session ownership checks.
+
 | Module | Role |
 | --- | --- |
 | `core/src/layout.ts` | Derives POSIX mailbox paths without filesystem access through `reviewLayout`, `currentPointerPath`, `requestFile`, and `answerFile`. |

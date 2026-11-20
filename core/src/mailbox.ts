@@ -1,10 +1,31 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
-import { parseAnswer, parseHeartbeat, parseRequest, parseSession, REQUEST_ID_PATTERN, type Answer, type Mailbox, type Request, type SessionRecord } from "./qa";
+import { dirname } from "node:path";
+import { parseSession, type Mailbox, type SessionRecord } from "./qa";
 import { answerFile, currentPointerPath, requestFile, reviewLayout, type ReviewLayout } from "./layout";
+import { encodeJson, readMailboxVia, type MailboxPort } from "./mailbox-port";
 
 export type MailboxPaths = ReviewLayout;
+
+export const fsPort: MailboxPort = {
+  async readText(path) {
+    try {
+      return await readFile(path, "utf8");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+      throw error;
+    }
+  },
+  async listNames(dir) {
+    try {
+      return await readdir(dir);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+      throw error;
+    }
+  },
+  writeText: writeTextAtomic,
+};
 
 /** Resolve the active review; an explicit id pins a writer, and null addresses the legacy root. */
 export function mailboxPaths(tourPath: string, reviewId?: string | null): MailboxPaths {
@@ -46,31 +67,8 @@ export function readSessionSync(path: string): SessionRecord | null {
   }
 }
 
-async function readJsonDir(dir: string): Promise<unknown[]> {
-  let names: string[];
-  try {
-    names = await readdir(dir);
-  } catch {
-    return [];
-  }
-  const files = names.filter((name) => name.endsWith(".json") && REQUEST_ID_PATTERN.test(name.slice(0, -5))).map((name) => readJson(join(dir, name)));
-  return Promise.all(files);
-}
-
-function parseAll<T>(values: unknown[], parse: (raw: unknown) => T | null): T[] {
-  return values.map(parse).filter((value): value is T => value !== null);
-}
-
 export async function readMailbox(paths: MailboxPaths): Promise<Mailbox> {
-  const [session, inbox, answered, agent] = await Promise.all([
-    readJson(paths.session),
-    readJsonDir(paths.inbox),
-    readJsonDir(paths.answered),
-    readJson(paths.agent),
-  ]);
-  const requests = parseAll<Request>(inbox, parseRequest).sort((a, b) => a.seq - b.seq);
-  const answers = new Map(parseAll<Answer>(answered, parseAnswer).map((answer) => [answer.id, answer]));
-  return { session: parseSession(session), requests, answers, heartbeat: parseHeartbeat(agent) };
+  return readMailboxVia(fsPort, paths);
 }
 
 let tempCounter = 0;
@@ -79,12 +77,8 @@ function tempPath(path: string): string {
   return `${path}.${process.pid}.${tempCounter++}.tmp`;
 }
 
-function encode(value: unknown): string {
-  return `${JSON.stringify(value, null, 2)}\n`;
-}
-
 export async function writeJsonAtomic(path: string, value: unknown): Promise<void> {
-  await writeTextAtomic(path, encode(value));
+  await writeTextAtomic(path, encodeJson(value));
 }
 
 export async function writeTextAtomic(path: string, text: string): Promise<void> {
@@ -98,6 +92,6 @@ export async function writeTextAtomic(path: string, text: string): Promise<void>
 export function writeJsonAtomicSync(path: string, value: unknown): void {
   mkdirSync(dirname(path), { recursive: true });
   const temp = tempPath(path);
-  writeFileSync(temp, encode(value));
+  writeFileSync(temp, encodeJson(value));
   renameSync(temp, path);
 }
