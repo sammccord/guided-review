@@ -1,5 +1,6 @@
 import type { Stop, Tour } from "./schema";
 import { tourStops } from "./stops";
+import { parseUnifiedDiff } from "./diff";
 
 /** Changed line ranges per file side, as git reports them for `base...head`. */
 export interface HunkRange {
@@ -69,120 +70,16 @@ export function checkAnchors(tour: Tour, ranges: DiffRanges): string[] {
   return messages;
 }
 
-const C_ESCAPES: Record<string, number> = { a: 7, b: 8, t: 9, n: 10, v: 11, f: 12, r: 13, '"': 34, "\\": 92 };
-
-/** Undo git's core.quotePath C-style quoting, whose octal escapes are UTF-8 bytes. */
-function unquoteGitPath(raw: string): string {
-  if (!raw.startsWith('"') || !raw.endsWith('"')) return raw;
-  const bytes: number[] = [];
-  const body = raw.slice(1, -1);
-  for (let i = 0; i < body.length; i++) {
-    const ch = body[i]!;
-    if (ch !== "\\") {
-      bytes.push(...new TextEncoder().encode(ch));
-      continue;
-    }
-    const next = body[i + 1] ?? "";
-    if (/[0-7]/.test(next)) {
-      bytes.push(Number.parseInt(body.slice(i + 1, i + 4), 8));
-      i += 3;
-    } else {
-      bytes.push(C_ESCAPES[next] ?? next.charCodeAt(0));
-      i += 1;
-    }
-  }
-  return new TextDecoder().decode(new Uint8Array(bytes));
-}
-
-function stripPrefix(path: string, prefix: "a/" | "b/"): string {
-  return path.startsWith(prefix) ? path.slice(prefix.length) : path;
-}
-
-function headerPath(line: string, marker: "--- " | "+++ "): string | null {
-  const raw = unquoteGitPath(line.slice(marker.length).replace(/\t.*$/, ""));
-  if (raw === "/dev/null") return null;
-  return stripPrefix(raw, marker === "--- " ? "a/" : "b/");
-}
-
-/** Best-effort path for headers with no ---/+++ lines (binary, mode-only); ambiguous when paths contain " b/". */
-function diffGitPaths(line: string): { oldPath: string; newPath: string } {
-  const rest = line.slice("diff --git ".length);
-  const quoted = /^("(?:[^"\\]|\\.)*") ("(?:[^"\\]|\\.)*")$/.exec(rest);
-  if (quoted) {
-    return {
-      oldPath: stripPrefix(unquoteGitPath(quoted[1]!), "a/"),
-      newPath: stripPrefix(unquoteGitPath(quoted[2]!), "b/"),
-    };
-  }
-  const split = rest.indexOf(" b/");
-  if (split < 0) return { oldPath: stripPrefix(rest, "a/"), newPath: stripPrefix(rest, "a/") };
-  return { oldPath: stripPrefix(rest.slice(0, split), "a/"), newPath: rest.slice(split + 3) };
-}
-
-interface FileBuilder {
-  oldPath: string;
-  newPath: string;
-  deleted: boolean;
-  ranges: HunkRange[];
-}
-
 /** Parse `git diff` output into hunk ranges keyed by the path git reports. */
 export function parseDiffRanges(patch: string): DiffRanges {
   const result = new Map<string, HunkRange[]>();
-  let file: FileBuilder | null = null;
-  let oldLeft = 0;
-  let newLeft = 0;
-
-  const flush = () => {
-    if (!file) return;
-    const key = file.deleted ? file.oldPath : file.newPath;
-    result.set(key, [...(result.get(key) ?? []), ...file.ranges]);
-    file = null;
-  };
-
-  for (const line of patch.split("\n")) {
-    if (file && (oldLeft > 0 || newLeft > 0)) {
-      const marker = line[0];
-      if (marker === " " || line === "") {
-        oldLeft--;
-        newLeft--;
-      } else if (marker === "-") {
-        oldLeft--;
-      } else if (marker === "+") {
-        newLeft--;
-      }
-      continue;
+  for (const file of parseUnifiedDiff(patch)) {
+    const ranges = result.get(file.path) ?? [];
+    for (const hunk of file.hunks) {
+      if (hunk.oldCount > 0) ranges.push({ side: "old", start: hunk.oldStart, end: hunk.oldStart + hunk.oldCount - 1 });
+      if (hunk.newCount > 0) ranges.push({ side: "new", start: hunk.newStart, end: hunk.newStart + hunk.newCount - 1 });
     }
-    if (line.startsWith("diff --git ")) {
-      flush();
-      file = { ...diffGitPaths(line), deleted: false, ranges: [] };
-      continue;
-    }
-    if (!file) continue;
-    const current: FileBuilder = file;
-    if (line.startsWith("rename from ")) current.oldPath = unquoteGitPath(line.slice(12));
-    else if (line.startsWith("rename to ")) current.newPath = unquoteGitPath(line.slice(10));
-    else if (line.startsWith("deleted file mode")) current.deleted = true;
-    else if (line.startsWith("--- ")) {
-      const path = headerPath(line, "--- ");
-      if (path !== null) current.oldPath = path;
-    } else if (line.startsWith("+++ ")) {
-      const path = headerPath(line, "+++ ");
-      if (path === null) current.deleted = true;
-      else current.newPath = path;
-    } else if (line.startsWith("@@ ")) {
-      const match = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(line);
-      if (!match) continue;
-      const oldStart = Number(match[1]);
-      const oldCount = match[2] === undefined ? 1 : Number(match[2]);
-      const newStart = Number(match[3]);
-      const newCount = match[4] === undefined ? 1 : Number(match[4]);
-      if (oldCount > 0) current.ranges.push({ side: "old", start: oldStart, end: oldStart + oldCount - 1 });
-      if (newCount > 0) current.ranges.push({ side: "new", start: newStart, end: newStart + newCount - 1 });
-      oldLeft = oldCount;
-      newLeft = newCount;
-    }
+    result.set(file.path, ranges);
   }
-  flush();
   return result;
 }
