@@ -12,6 +12,7 @@ Renderer-independent logic for guided-review tours. An agent writes a tour file.
 | `schema.ts` | `Tour`, `Track`, `Stop`, `TourStop`, `SkippedFile`, `StackLayer`, `TourStack`, `StopKind`, `Verdict`, `StackLayerState`, `ParseResult`, `STOP_KINDS`, `VERDICTS`, `STACK_LAYER_STATES`, `TOUR_VERSION`, `parseTour`. `parseTour` also rejects bad or duplicate stop ids and unresolved `[[id]]` references. |
 | `stops.ts` | `tourStops`, which flattens tracks into numbered stops, plus `checkStopSize`, `checkBullets`, and `MAX_STOP_LINES` |
 | `anchors.ts` | `parseDiffRanges`, which parses `git diff` output with no I/O, plus `checkAnchors`, `HunkRange`, and `DiffRanges` |
+| `diff.ts` | `parseUnifiedDiff`, `DiffFile`, `DiffFileStatus`, `DiffHunk`, `DiffLine`, and `DiffLineKind`: pure file, hunk, and line parsing for renderers. |
 | `links.ts` | `indexStops` (`byId`, `linksFrom`, `linksTo`), `segmentText`, `formatLink`, `referencedIds`, `STOP_ID_PATTERN`, `TextSegment`, `StopIndex` |
 | `stack.ts` | `stackPosition`, which gives the current layer's 1-based position, the layer count, and the layers below and above it, plus `StackPosition` |
 | `validate.ts` | `validateTour`, which parses, loads the diff ranges, and checks anchors, then returns `checkStopSize` and `checkBullets` warnings, plus `ValidateResult` |

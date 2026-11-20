@@ -5,6 +5,7 @@ This file lists all notable changes to this project. The format follows [Keep a 
 ## Unreleased
 
 ### Added
+- Core exports `parseUnifiedDiff` for browser-safe file, hunk, and line parsing.
 
 - Standalone Node CLI with `check`, `stage`, `wait`, `answer`, and `approve`. Staging bundles a pinned tour, diff, metadata, and mailbox under the shared directory for sandboxed renderers.
 

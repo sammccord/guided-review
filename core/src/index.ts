@@ -1,6 +1,7 @@
 export * from "./schema";
 export * from "./stops";
 export * from "./anchors";
+export * from "./diff";
 export * from "./validate";
 export * from "./navigator";
 export * from "./links";
