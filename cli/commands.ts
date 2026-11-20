@@ -14,7 +14,7 @@ import {
 } from "../core/src/index";
 import { answerPath, mailboxPaths, readMailbox, readJson, writeJsonAtomic, type MailboxPaths } from "../core/src/mailbox";
 import { writeLine, type CliContext, type CliResult } from "./context";
-import { assertPrHostIsRemote, githubApproveArgs, githubCommentArgs, parsePullRequestUrl, runGh, reviewUrl } from "./github";
+import { assertPrHostIsRemote, githubApproveArgs, githubCommentArgs, parsePullRequestUrl, runGh, reviewUrl, type PullRequestTarget } from "./github";
 import { assertSessionTour, pinTourRefs } from "./session";
 
 const WAIT_DEFAULT_SECONDS = 90;
@@ -271,22 +271,39 @@ export async function runAnswer(args: readonly string[], ctx: CliContext): Promi
   }
   let text = parsed.text;
   if (request.kind === "comment" || request.kind === "reviewer-comment") {
+    let target: PullRequestTarget | null;
     try {
       const tour: unknown = JSON.parse(await readFile(box.session.tourPath, "utf8"));
-      const target =
-        typeof tour === "object" && tour !== null && "url" in tour && typeof tour.url === "string" ? parsePullRequestUrl(tour.url) : null;
+      target = typeof tour === "object" && tour !== null && "url" in tour && typeof tour.url === "string" ? parsePullRequestUrl(tour.url) : null;
       if (!target) {
         await writeLine(ctx.stderr, 'tour answer: tour has no PR url; add "url" to the tour or post the comment yourself');
         return { kind: "exit", code: 1 };
       }
       await assertPrHostIsRemote(box.session.repo, target);
-      const result: unknown = JSON.parse(await runGh(githubCommentArgs(target, box.session.head, request.stop.anchor, text), box.session.repo));
+    } catch (error) {
+      await writeLine(ctx.stderr, `tour answer: ${error instanceof Error ? error.message : String(error)}`);
+      return { kind: "exit", code: 1 };
+    }
+    try {
+      const { head, repo } = box.session;
+      const { anchor } = request.stop;
+      const pages: unknown = JSON.parse(await runGh(
+        ["api", "--hostname", target.host, "--paginate", "--slurp", `repos/${target.owner}/${target.repo}/pulls/${target.number}/comments`], repo,
+      ));
+      if (!Array.isArray(pages) || !pages.every(Array.isArray)) throw new Error("gh returned invalid PR comments");
+      const existing = pages.flat().find((comment: unknown) =>
+        typeof comment === "object" && comment !== null && "path" in comment && comment.path === anchor.path &&
+        "body" in comment && comment.body === text &&
+        (("commit_id" in comment && comment.commit_id === head && "line" in comment && comment.line === anchor.line) ||
+          ("original_commit_id" in comment && comment.original_commit_id === head && "original_line" in comment && comment.original_line === anchor.line)),
+      );
+      const result: unknown = existing ?? JSON.parse(await runGh(githubCommentArgs(target, head, anchor, text), repo));
       if (typeof result !== "object" || result === null || !("html_url" in result) || typeof result.html_url !== "string") {
         throw new Error("gh returned no comment html_url");
       }
       text = `${text}\n\n${result.html_url}`;
     } catch (error) {
-      await writeLine(ctx.stderr, `tour answer: PR comment failed: ${error instanceof Error ? error.message : String(error)}`);
+      await writeLine(ctx.stderr, `tour answer: PR comment failed (outcome unknown; rerun the same command, it checks for an existing comment first): ${error instanceof Error ? error.message : String(error)}`);
       return { kind: "exit", code: 1 };
     }
   }

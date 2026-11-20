@@ -41,6 +41,9 @@ async function run(handler: typeof runWait, args: string[], cwd: string, notes: 
 }
 
 const json = (out: string) => JSON.parse(out.trim());
+/** These tests spawn a fresh runtime for every stubbed gh and hunk call, which takes seconds under a parallel test run. */
+const SPAWN_TIMEOUT_MS = 20_000;
+const listArgs = ["api", "--hostname", "github.example.com", "--paginate", "--slurp", "repos/o/r/pulls/42/comments"] as const;
 
 function addRemote(repo: string, url = "https://github.example.com/o/r.git") {
   execFileSync("git", ["init", "-q", repo]);
@@ -366,6 +369,10 @@ else console.log(JSON.stringify(${JSON.stringify(scenario === "bad-response" ? {
 import { appendFileSync } from "node:fs";
 const args = process.argv.slice(2);
 appendFileSync(${JSON.stringify(callsPath)}, JSON.stringify({ command: "${command}", args, cwd: process.cwd() }) + "\\n");
+if ("${command}" === "gh" && args.includes("--paginate")) {
+  console.log("[[]]");
+  process.exit(0);
+}
 if ("${command}" === "gh" && ${failGh}) {
   console.error("gh: line must be part of the diff (HTTP 422)");
   process.exit(1);
@@ -382,14 +389,16 @@ console.log(JSON.stringify("${command}" === "gh"
     try {
       const result = await run(runAnswer, [tour, "q-1", "--text", text], dir, hostNotes ? hunkNotes : noNotes);
       const calls = (await Bun.file(callsPath).text()).trim().split("\n").map(json);
-      expect(calls[0]).toEqual({
+      expect(calls[0]).toEqual({ command: "gh", args: [...listArgs], cwd: realpathSync(bin) });
+      expect(calls[1]).toEqual({
         command: "gh",
         args: githubCommentArgs({ host: "github.example.com", owner: "o", repo: "r", number: 42 }, HEAD, anchor, text),
         cwd: realpathSync(bin),
       });
+      calls.shift();
       if (failGh) {
         expect(result.result).toEqual({ kind: "exit", code: 1 });
-        expect(result.stderr).toContain("gh: line must be part of the diff (HTTP 422)");
+        expect(result.stderr).toBe("tour answer: PR comment failed (outcome unknown; rerun the same command, it checks for an existing comment first): gh: line must be part of the diff (HTTP 422)\n");
         expect(calls).toHaveLength(1);
         expect(await Bun.file(answerPath(paths, "q-1")).exists()).toBe(false);
       } else {
@@ -400,13 +409,13 @@ console.log(JSON.stringify("${command}" === "gh"
         expect(json(result.stdout)).toEqual({ id: "q-1", status: "posted", commentId: hostNotes ? "mcp:42" : null });
         expect(await Bun.file(answerPath(paths, "q-1")).json()).toMatchObject({ id: "q-1", commentId: hostNotes ? "mcp:42" : null, text: `${text}\n\n${htmlUrl}` });
         expect(json((await run(runAnswer, [tour, "q-1", "--text", text], dir)).stdout).status).toBe("already-answered");
-        expect((await Bun.file(callsPath).text()).trim().split("\n")).toHaveLength(hostNotes ? 3 : 1);
+        expect((await Bun.file(callsPath).text()).trim().split("\n")).toHaveLength(hostNotes ? 4 : 2);
       }
     } finally {
       if (path === undefined) delete process.env.PATH;
       else process.env.PATH = path;
     }
-  });
+  }, SPAWN_TIMEOUT_MS);
 
   test.each(["comment", "reviewer-comment", "approve"] as const)("%s refuses a PR host that is not a remote before calling gh", async (kind) => {
     const bin = mkdtempSync(join(dir, "foreign-host-"));
@@ -441,4 +450,58 @@ console.log(JSON.stringify("${command}" === "gh"
       else process.env.PATH = path;
     }
   });
+
+  test("a retried PR comment answer after an unclear failure posts exactly once", async () => {
+    const bin = mkdtempSync(join(dir, "retry-"));
+    const tour = join(bin, "retry.tour.json");
+    const paths = mailboxPaths(tour);
+    const statePath = join(bin, "comments.json");
+    const callsPath = join(bin, "calls.jsonl");
+    const text = "Fix 'the bound'.\nKeep `it` $(safe).";
+    const htmlUrl = "https://github.example.com/o/r/pull/42#discussion_r7";
+    addRemote(bin);
+    await writeJsonAtomic(tour, { url: "https://github.example.com/o/r/pull/42" });
+    await writeJsonAtomic(paths.session, session(tour, { repo: bin }));
+    await writeJsonAtomic(requestPath(paths, "q-1"), { id: "q-1", seq: 1, at: "t1", kind: "comment", stop, body: "- Extra attempt." });
+    const decoys = [
+      { path: anchor.path, line: anchor.line, commit_id: HEAD, body: `${text} `, html_url: "wrong-body" },
+      { path: anchor.path, line: anchor.line + 1, commit_id: HEAD, body: text, html_url: "wrong-line" },
+      { path: "other.ts", line: anchor.line, commit_id: HEAD, body: text, html_url: "wrong-path" },
+      { path: anchor.path, line: anchor.line, commit_id: "c".repeat(40), original_commit_id: "d".repeat(40), body: text, html_url: "wrong-commit" },
+    ];
+    writeFileSync(statePath, JSON.stringify([decoys.slice(0, 2), decoys.slice(2)]));
+    writeFileSync(join(bin, "gh"), `#!${process.execPath}
+import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
+const args = process.argv.slice(2);
+appendFileSync(${JSON.stringify(callsPath)}, JSON.stringify(args) + "\\n");
+const pages = JSON.parse(readFileSync(${JSON.stringify(statePath)}, "utf8"));
+if (args.includes("--paginate")) {
+  console.log(JSON.stringify(pages));
+  process.exit(0);
+}
+const field = (name) => args.find((arg) => arg.startsWith(name + "="))?.slice(name.length + 1);
+pages.push([{ path: field("path"), line: null, original_line: Number(field("line")), commit_id: "c".repeat(40), original_commit_id: field("commit_id"), body: field("body"), html_url: ${JSON.stringify(htmlUrl)} }]);
+writeFileSync(${JSON.stringify(statePath)}, JSON.stringify(pages));
+console.error("gh: context deadline exceeded");
+process.exit(1);
+`, { mode: 0o755 });
+    const path = process.env.PATH;
+    process.env.PATH = `${bin}:${path ?? ""}`;
+    try {
+      const first = await run(runAnswer, [tour, "q-1", "--text", text], dir, noNotes);
+      expect(first.result).toEqual({ kind: "exit", code: 1 });
+      expect(first.stderr).toBe("tour answer: PR comment failed (outcome unknown; rerun the same command, it checks for an existing comment first): gh: context deadline exceeded\n");
+      expect(await Bun.file(answerPath(paths, "q-1")).exists()).toBe(false);
+      const second = await run(runAnswer, [tour, "q-1", "--text", text], dir, noNotes);
+      expect(second.result).toEqual({ kind: "exit", code: 0 });
+      expect(await Bun.file(answerPath(paths, "q-1")).json()).toMatchObject({ text: `${text}\n\n${htmlUrl}` });
+      const calls: string[][] = (await Bun.file(callsPath).text()).trim().split("\n").map(json);
+      expect(calls.map((args) => args.includes("--paginate") ? "list" : "post")).toEqual(["list", "post", "list"]);
+      expect(calls[0]).toEqual([...listArgs]);
+      expect(JSON.parse(await Bun.file(statePath).text()).flat()).toHaveLength(decoys.length + 1);
+    } finally {
+      if (path === undefined) delete process.env.PATH;
+      else process.env.PATH = path;
+    }
+  }, SPAWN_TIMEOUT_MS);
 });
