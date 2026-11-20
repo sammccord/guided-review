@@ -6,6 +6,8 @@ import { writeJsonAtomic, writeTextAtomic } from "../core/src/mailbox";
 import { loadAndCheck } from "./check";
 import { prepareSession } from "./session";
 
+const MAX_DIFF_BYTES = 8 * 1024 * 1024;
+
 export async function stageReview(input: { worktree: string; tourPath: string; sharedRoot: string; sessionId?: string; fresh?: boolean }): Promise<{
   slug: string; dir: string; tour: string; reviewId: string; meta: StageMeta; warnings: string[];
 }> {
@@ -14,7 +16,12 @@ export async function stageReview(input: { worktree: string; tourPath: string; s
   if (!result.ok) throw new Error(result.errors.join("\n"));
   const { tour, warnings } = result;
   const diff = await readDiffText(worktree, tour.base, tour.head);
-  const slug = `${basename(worktree)}-${createHash("sha1").update(worktree).digest("hex").slice(0, 8)}`;
+  const diffBytes = Buffer.byteLength(diff);
+  if (diffBytes > MAX_DIFF_BYTES) {
+    throw new Error(`diff is ${(diffBytes / 1024 / 1024).toFixed(1)} MiB; the Toshi panel reads at most 8 MiB. Review a smaller range or split the PR.`);
+  }
+  const name = basename(worktree).toLowerCase().replace(/[^a-z0-9._-]/g, "-").replace(/^[^a-z0-9]+/, "").slice(0, 100) || "review";
+  const slug = `${name}-${createHash("sha1").update(worktree).digest("hex").slice(0, 8)}`;
   const layout = stageLayout(resolve(input.sharedRoot, "guided-review", slug));
   await writeJsonAtomic(layout.tour, tour);
   await writeTextAtomic(layout.diff, diff);

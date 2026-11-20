@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseStageMeta, stageLayout, type Tour } from "../core/src/index";
@@ -9,9 +9,11 @@ import { stageReview } from "./stage";
 
 const dirs: string[] = [];
 
-export function createStageFixture() {
-  const dir = mkdtempSync(join(tmpdir(), "guided-review-stage-"));
-  dirs.push(dir);
+export function createStageFixture(name?: string) {
+  const root = mkdtempSync(join(tmpdir(), "guided-review-stage-"));
+  dirs.push(root);
+  const dir = name === undefined ? root : join(root, name);
+  mkdirSync(dir, { recursive: true });
   const git = (...args: string[]) => execFileSync("git", ["-C", dir, ...args], { encoding: "utf8" }).trim();
   git("init", "-q");
   git("config", "user.name", "Test");
@@ -55,5 +57,34 @@ test("bad anchors fail before writing anything", async () => {
   fixture.tour.tracks[0]!.stops[0]!.line = 900;
   writeFileSync(fixture.tourPath, JSON.stringify(fixture.tour));
   await expect(stageReview({ worktree: fixture.dir, tourPath: fixture.tourPath, sharedRoot: fixture.sharedRoot })).rejects.toThrow();
+  expect(existsSync(fixture.sharedRoot)).toBe(false);
+});
+
+const SLUG = /^[a-z0-9][a-z0-9._-]{0,127}$/;
+
+test.each([
+  ["My Worktree", /^my-worktree-[0-9a-f]{8}$/],
+  ["UPPER", /^upper-[0-9a-f]{8}$/],
+  ["..--Hidden Dir", /^hidden-dir-[0-9a-f]{8}$/],
+  ["***", /^review-[0-9a-f]{8}$/],
+  ["x".repeat(200), new RegExp(`^${"x".repeat(100)}-[0-9a-f]{8}$`)],
+])("stage derives a valid slug from the worktree name %s", async (name, expected) => {
+  const fixture = createStageFixture(name);
+  const staged = await stageReview({ worktree: fixture.dir, tourPath: fixture.tourPath, sharedRoot: fixture.sharedRoot });
+  expect(staged.slug).toMatch(SLUG);
+  expect(staged.slug).toMatch(expected);
+  expect(staged.dir).toBe(join(fixture.sharedRoot, "guided-review", staged.slug));
+});
+
+test("stage refuses a diff larger than the Toshi panel reads", async () => {
+  const fixture = createStageFixture();
+  writeFileSync(join(fixture.dir, "big.txt"), `${"0123456789abcdef".repeat(4)}\n`.repeat(9 * 16 * 1024));
+  execFileSync("git", ["-C", fixture.dir, "add", "."]);
+  execFileSync("git", ["-C", fixture.dir, "-c", "user.name=T", "-c", "user.email=t", "-c", "commit.gpgsign=false", "commit", "-qm", "big"]);
+  fixture.tour.head = "HEAD";
+  fixture.tour.base = "HEAD~2";
+  writeFileSync(fixture.tourPath, JSON.stringify(fixture.tour));
+  await expect(stageReview({ worktree: fixture.dir, tourPath: fixture.tourPath, sharedRoot: fixture.sharedRoot }))
+    .rejects.toThrow(/^diff is 9\.\d MiB; the Toshi panel reads at most 8 MiB\. Review a smaller range or split the PR\.$/);
   expect(existsSync(fixture.sharedRoot)).toBe(false);
 });
