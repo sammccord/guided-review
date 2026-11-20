@@ -10,6 +10,7 @@ from pathlib import Path
 
 PR_FIELDS = "number,title,url,body,state,baseRefName,baseRefOid,headRefOid"
 PR_URL = re.compile(r"^https?://([^/]+)/([^/]+)/([^/]+)/pull/(\d+)")
+COMMIT_ID = re.compile(r"^[0-9a-f]{40}([0-9a-f]{24})?$")
 
 
 class PrepareError(Exception):
@@ -28,7 +29,7 @@ def git(repo, *args, check=True):
 
 
 def rev(repo, ref):
-    proc = git(repo, "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}", check=False)
+    proc = git(repo, "rev-parse", "--verify", "--quiet", "--end-of-options", f"{ref}^{{commit}}", check=False)
     return proc.stdout.strip() if proc.returncode == 0 else None
 
 
@@ -88,10 +89,10 @@ def checkout_worktree(repo, slug, head):
     worktree = common.resolve() / "guided-review" / slug
     branch = f"review/{slug}"
     if worktree.is_dir():
-        git(str(worktree), "checkout", "--quiet", "-B", branch, head)
+        git(str(worktree), "checkout", "--quiet", "-B", branch, "--end-of-options", head)
     else:
         worktree.parent.mkdir(parents=True, exist_ok=True)
-        git(repo, "worktree", "add", "--quiet", "-B", branch, str(worktree), head)
+        git(repo, "worktree", "add", "--quiet", "-B", branch, "--end-of-options", str(worktree), head)
     return str(worktree), branch
 
 
@@ -109,7 +110,7 @@ def cleanup_command(repo, worktree, branch, ref):
 
 
 def build_review(repo, slug, base, head, title, url=None, number=None, body=None, stack=None, ref=None):
-    merge_base = git(repo, "merge-base", base, head, check=False).stdout.strip()
+    merge_base = git(repo, "merge-base", "--end-of-options", base, head, check=False).stdout.strip()
     if not merge_base:
         raise PrepareError(f"no merge base between {base} and {head}")
     worktree, branch = checkout_worktree(repo, slug, head)
@@ -124,8 +125,8 @@ def build_review(repo, slug, base, head, title, url=None, number=None, body=None
         "url": url or None,
         "number": number,
         "description": body or None,
-        "stat": git(worktree, "diff", "--shortstat", f"{base}...{head}").stdout.strip(),
-        "commits": git(worktree, "log", "--format=%h %s", f"{merge_base}..{head}").stdout.splitlines(),
+        "stat": git(worktree, "diff", "--shortstat", "--end-of-options", f"{base}...{head}").stdout.strip(),
+        "commits": git(worktree, "log", "--format=%h %s", "--end-of-options", f"{merge_base}..{head}").stdout.splitlines(),
         "stack": stack,
         "cleanup": cleanup_command(repo, worktree, branch, ref),
     }
@@ -174,15 +175,18 @@ def review_tour(repo, remote, path):
         base, head = tour["base"], tour["head"]
     except (OSError, json.JSONDecodeError, KeyError, TypeError) as err:
         raise PrepareError(f"not a tour file: {path}: {err}")
+    for field, sha in (("base", base), ("head", head)):
+        if not isinstance(sha, str) or not COMMIT_ID.fullmatch(sha):
+            raise PrepareError(f"{path}: {field} must be a full lowercase 40- or 64-character commit id, got {json.dumps(sha)}")
     match = PR_URL.match(tour.get("url") or "")
     number = int(match.group(4)) if match else None
     ref = pr_ref(number) if number else None
     if not (rev(repo, base) and rev(repo, head)):
         refspecs = [f"+refs/pull/{number}/head:{ref}"] if ref else []
-        git(repo, "fetch", "--quiet", remote, *refspecs, check=False)
+        git(repo, "fetch", "--quiet", "--end-of-options", remote, *refspecs, check=False)
         for sha in (base, head):
             if not rev(repo, sha):
-                git(repo, "fetch", "--quiet", remote, sha, check=False)
+                git(repo, "fetch", "--quiet", "--end-of-options", remote, sha, check=False)
         missing = [sha for sha in (base, head) if not rev(repo, sha)]
         if missing:
             raise PrepareError(f"commits {', '.join(missing)} from {path} are not reachable from {remote}")
