@@ -101,7 +101,3 @@ export function writeJsonAtomicSync(path: string, value: unknown): void {
   writeFileSync(temp, encode(value));
   renameSync(temp, path);
 }
-
-export function nextSeq(box: Mailbox): number {
-  return box.requests.reduce((max, request) => Math.max(max, request.seq), 0) + 1;
-}

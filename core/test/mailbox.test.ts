@@ -2,8 +2,8 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, readdirSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { answerPath, mailboxPaths, nextSeq, readMailbox, requestPath, writeJsonAtomic, writeJsonAtomicSync } from "../src/mailbox";
-import { emptyMailbox, type Request, type SessionRecord } from "../src/index";
+import { answerPath, mailboxPaths, readMailbox, requestPath, writeJsonAtomic, writeJsonAtomicSync } from "../src/mailbox";
+import { emptyMailbox, nextSeq, type Request, type SessionRecord } from "../src/index";
 
 describe("mailbox", () => {
   let dir = "";

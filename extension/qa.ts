@@ -8,6 +8,8 @@ import type {
 } from "hunkdiff/extension";
 import {
   classifyNote,
+  buildRequest,
+  stopRef,
   DECISIONS,
   emptyMailbox,
   ownsSession,
@@ -20,13 +22,13 @@ import {
   type Anchor,
   type Decision,
   type Mailbox,
+  type RequestBody,
   type Request,
   type SessionRecord,
   type StopRef,
   type TourStop,
 } from "../core/src/index";
 import {
-  nextSeq,
   readMailbox,
   readSessionSync,
   requestPath,
@@ -175,23 +177,9 @@ function touchActivity(): void {
   }
 }
 
-function stopRef(entry: TourStop): StopRef {
-  const { number, stop } = entry;
-  return {
-    number,
-    ...(stop.id === undefined ? {} : { id: stop.id }),
-    title: stop.title,
-    ask: stop.ask,
-    anchor: { path: stop.path, side: stop.side, line: stop.line },
-  };
-}
-
-type RequestBody = Request extends infer R ? (R extends Request ? Omit<R, "id" | "seq" | "at"> : never) : never;
-
 async function writeRequest(paths: MailboxPaths, body: RequestBody): Promise<void> {
   const box = await readMailbox(paths);
-  const seq = nextSeq(box);
-  const request = { id: box.session?.reviewId ? `q-${box.session.reviewId}-${seq}` : `q-${seq}`, seq, at: now(), ...body } as Request;
+  const request = buildRequest(box, body, now());
   await writeJsonAtomic(requestPath(paths, request.id), request);
   setState({ ...state, box: { ...box, requests: [...box.requests, request] } });
   void syncPlaceholders(state.box);
