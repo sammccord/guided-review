@@ -43,12 +43,14 @@ import {
   type Verdict,
 } from "../core/src/index";
 import { readDiffRanges } from "../core/src/git";
-import { actionLabel, decisionBadge, finish, openSession, QA_KEYS, QA_USAGE, registerQa, requestAsk, requestComment, requestReviewerComment, runAnswer, runApprove, runWait, useMailbox, useSpinnerFrame, useWaiting, type TourAccess } from "./qa";
+import { actionLabel, decisionBadge, finish, openSession, QA_KEYS, registerQa, requestAsk, requestComment, requestReviewerComment, useMailbox, useSpinnerFrame, useWaiting, type TourAccess } from "./qa";
+import { QA_USAGE, runAnswer, runApprove, runWait } from "../cli/commands";
 import { toSidecar } from "./sidecar";
 import { groupFilesByDirectory } from "./files";
-import { pinTourRefs } from "./session";
+import { pinTourRefs } from "../cli/session";
 import { registerSettings, TourSettings } from "./settings";
 
+const EXTENSION_DIR = resolve(import.meta.dir, "..");
 const PANE_ID = "tour";
 const sidecarDirectories = new Set<string>();
 
@@ -108,9 +110,9 @@ async function writeSidecar(tour: Tour): Promise<string> {
 
 async function runTourCli(args: readonly string[], ctx: ExtensionCliCommandContext, settings: TourSettings): Promise<ExtensionCliCommandResult> {
   const [subcommand, file, ...extra] = args;
-  if (subcommand === "wait") return runWait(args.slice(1), ctx);
-  if (subcommand === "answer") return runAnswer(args.slice(1), ctx);
-  if (subcommand === "approve") return runApprove(args.slice(1), ctx);
+  if (subcommand === "wait") return runWait(args.slice(1), { ...ctx, program: `hunk --extension ${EXTENSION_DIR} tour` });
+  if (subcommand === "answer") return runAnswer(args.slice(1), { ...ctx, program: `hunk --extension ${EXTENSION_DIR} tour` });
+  if (subcommand === "approve") return runApprove(args.slice(1), { ...ctx, program: `hunk --extension ${EXTENSION_DIR} tour` });
   const fresh = subcommand === "open" && extra.length === 1 && extra[0] === "--fresh";
   if ((subcommand !== "check" && subcommand !== "open") || !file || (extra.length > 0 && !fresh)) {
     await writeLines(ctx.stderr, QA_USAGE);

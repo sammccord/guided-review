@@ -10,7 +10,7 @@
     "apiVersion": 25
   },
   "scripts": {
-    "test": "bun test core extension",
+    "test": "bun test core cli extension",
     "typecheck": "tsc --noEmit",
     "check": "bun run typecheck && bun run test",
     "demo": "examples/demo/run.sh"

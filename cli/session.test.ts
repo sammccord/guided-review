@@ -6,7 +6,7 @@ import { decisions, pending, type Request, type Tour } from "../core/src/index";
 import { answerPath, mailboxPaths, readMailbox, requestPath, writeJsonAtomic } from "../core/src/mailbox";
 import { stop, tour } from "../core/test/fixtures";
 import { assertSessionTour, prepareSession, tourFingerprint } from "./session";
-import { runAnswer, runApprove, runWait } from "./qa";
+import { runAnswer, runApprove, runWait } from "./commands";
 
 const dirs: string[] = [];
 afterEach(async () => { await Promise.all(dirs.splice(0).map(dir => rm(dir, { recursive: true, force: true }))); });
@@ -68,7 +68,7 @@ test.each(["head", "base", "url", "layer", "stop", "order", "fresh", "repo"])("i
   expect((await readMailbox(first.paths)).requests).toEqual([oldRequest]);
   let stderr = "";
   const result = await runAnswer([input.tourPath, oldRequest.id, "--text", "Late answer"], {
-    cwd: input.repo, signal: new AbortController().signal, stdin: (async function* () {})(),
+    cwd: input.repo, signal: new AbortController().signal, program: `hunk --extension ${new URL("..", import.meta.url).pathname.replace(/\/$/, "")} tour`,
     stdout: { write: async () => {} }, stderr: { write: async text => { stderr += text; } },
   });
   expect(result).toEqual({ kind: "exit", code: 1 });
@@ -138,7 +138,7 @@ test("wait, answer, and approval reject a tour edited without reopening, before 
     for (const [handler, args] of [[runWait, [input.tourPath]], [runAnswer, [input.tourPath, questionId, "--text", "Answer"]], [runApprove, [input.tourPath]]] as const) {
       let stderr = "";
       const result = await handler([...args], {
-        cwd: input.repo, signal: new AbortController().signal, stdin: (async function* () {})(),
+        cwd: input.repo, signal: new AbortController().signal, program: `hunk --extension ${new URL("..", import.meta.url).pathname.replace(/\/$/, "")} tour`,
         stdout: { write: async () => {} }, stderr: { write: async text => { stderr += text; } },
       });
       expect(result).toEqual({ kind: "exit", code: 1 });
