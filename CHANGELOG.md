@@ -6,6 +6,8 @@ This file lists all notable changes to this project. The format follows [Keep a 
 
 ### Added
 
+- Standalone Node CLI with `check`, `stage`, `wait`, `answer`, and `approve`. Staging bundles a pinned tour, diff, metadata, and mailbox under the shared directory for sandboxed renderers.
+
 - Theme selections from **View > Themes** are saved immediately in user-scoped guided-review settings and restored across tours, repositories, and `--fresh` reviews.
 - `prepare.py <tour.json>...` and the skill accept shared tour files as the target. The agent checks out each tour's commits, skips the audit, and opens the tour unchanged.
 - `tour open <tour.json> --fresh` and `open-tour.sh --fresh` start a new review without importing saved history.

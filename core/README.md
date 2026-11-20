@@ -8,6 +8,7 @@ Renderer-independent logic for guided-review tours. An agent writes a tour file.
 
 | Module | Exports |
 | --- | --- |
+| `stage.ts` | `StageMeta`, `parseStageMeta`, and `stageLayout`: staged review metadata and pure POSIX bundle paths. |
 | `schema.ts` | `Tour`, `Track`, `Stop`, `TourStop`, `SkippedFile`, `StackLayer`, `TourStack`, `StopKind`, `Verdict`, `StackLayerState`, `ParseResult`, `STOP_KINDS`, `VERDICTS`, `STACK_LAYER_STATES`, `TOUR_VERSION`, `parseTour`. `parseTour` also rejects bad or duplicate stop ids and unresolved `[[id]]` references. |
 | `stops.ts` | `tourStops`, which flattens tracks into numbered stops, plus `checkStopSize`, `checkBullets`, and `MAX_STOP_LINES` |
 | `anchors.ts` | `parseDiffRanges`, which parses `git diff` output with no I/O, plus `checkAnchors`, `HunkRange`, and `DiffRanges` |

@@ -10,6 +10,7 @@
     "apiVersion": 25
   },
   "scripts": {
+    "build:cli": "bun build cli/bin.ts --target=node --format=esm --outfile=dist/guided-review.mjs",
     "test": "bun test core cli extension",
     "typecheck": "tsc --noEmit",
     "check": "bun run typecheck && bun run test",

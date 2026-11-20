@@ -27,6 +27,28 @@ usage: hunk tour check <tour.json> | open <tour.json> [--fresh]
 
 `wait`, `answer`, and `approve` print one JSON object per line to stdout. Handled errors start with `tour wait: `, `tour answer: `, or `tour approve: `. Malformed `answer` arguments print the shared usage text without a prefix. Empty-answer errors retain the prefix.
 
+## Standalone `guided-review` CLI
+
+Build with `bun run build:cli`, then run `node dist/guided-review.mjs <command>`:
+
+```text
+guided-review check <tour.json>
+guided-review stage <worktree> <tour.json> [--session <id>] [--shared <dir>] [--fresh]
+guided-review wait <tour.json>... [--timeout <seconds>] [--away <minutes>]
+guided-review answer <tour.json> <id> --text <answer>
+guided-review approve <tour.json> [--body <text>]
+```
+
+`check` uses the current directory. `stage` checks the tour in the given worktree and pins its refs before writing a bundle for a sandboxed renderer. Relative command paths resolve from the current directory.
+
+- Shared root: `--shared`, then `GUIDED_REVIEW_SHARED_DIR`, then `~/.mux/shared`.
+- Session id: `--session`, then `MUX_PTY_ID` when set.
+- Bundle: `<shared-root>/guided-review/<worktree-name>-<path-sha1-prefix>/`, using the first eight SHA-1 hex digits of the resolved worktree path.
+- Files: `review.tour.json`, `review.diff`, `meta.json`, and the `review.tour.qa/` mailbox.
+- Re-staging the same tour resumes its review generation; `--fresh` starts another.
+
+`stage` prints one JSON line with `slug`, `dir`, `tour`, `reviewId`, and optional `sessionId`. Warnings go to stderr. Pass the staged tour path to `wait`, `answer`, and `approve`; their flags and output match the Hunk commands below. `answer` records the answer without posting a host note (`commentId: null`). PR comment requests still post through GitHub.
+
 ## `tour check`
 
 ```bash
