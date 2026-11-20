@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { execFileSync } from "node:child_process";
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -40,6 +41,11 @@ async function run(handler: typeof runWait, args: string[], cwd: string, notes: 
 }
 
 const json = (out: string) => JSON.parse(out.trim());
+
+function addRemote(repo: string, url = "https://github.example.com/o/r.git") {
+  execFileSync("git", ["init", "-q", repo]);
+  execFileSync("git", ["-C", repo, "remote", "add", "origin", url]);
+}
 
 describe("tour wait and answer", () => {
   let dir = "";
@@ -213,6 +219,7 @@ describe("tour wait and answer", () => {
     const paths = mailboxPaths(tour);
     const callsPath = join(bin, "calls.jsonl");
     const url = "https://github.example.com/o/r/pull/42#pullrequestreview-123";
+    addRemote(bin);
     await writeJsonAtomic(tour, tourData);
     await writeJsonAtomic(paths.session, session(tour, { repo: bin, tourFingerprint: tourFingerprint(bin, tourData), closedAt: "t9" }));
     if (scenario !== "silent") {
@@ -350,6 +357,7 @@ else console.log(JSON.stringify(${JSON.stringify(scenario === "bad-response" ? {
     const callsPath = join(bin, "calls.jsonl");
     const text = "Reworded";
     const htmlUrl = "https://github.example.com/o/r/pull/42#discussion_r123";
+    addRemote(bin);
     await writeJsonAtomic(tour, { url: "https://github.example.com/o/r/pull/42" });
     await writeJsonAtomic(paths.session, session(tour, { repo: bin }));
     await writeJsonAtomic(requestPath(paths, "q-1"), { id: "q-1", seq: 1, at: "t1", kind, stop, body: "- Extra attempt." });
@@ -394,6 +402,40 @@ console.log(JSON.stringify("${command}" === "gh"
         expect(json((await run(runAnswer, [tour, "q-1", "--text", text], dir)).stdout).status).toBe("already-answered");
         expect((await Bun.file(callsPath).text()).trim().split("\n")).toHaveLength(hostNotes ? 3 : 1);
       }
+    } finally {
+      if (path === undefined) delete process.env.PATH;
+      else process.env.PATH = path;
+    }
+  });
+
+  test.each(["comment", "reviewer-comment", "approve"] as const)("%s refuses a PR host that is not a remote before calling gh", async (kind) => {
+    const bin = mkdtempSync(join(dir, "foreign-host-"));
+    const tour = join(bin, "foreign.tour.json");
+    const paths = mailboxPaths(tour);
+    const callsPath = join(bin, "calls.jsonl");
+    addRemote(bin, "https://github.com/o/r.git");
+    const foreign = { ...tourData, url: "https://attacker.example/o/r/pull/42" };
+    await writeJsonAtomic(tour, foreign);
+    writeFileSync(join(bin, "gh"), `#!/bin/sh\necho "$@" >> '${callsPath}'\necho '{"html_url":"x"}'\n`, { mode: 0o755 });
+    const path = process.env.PATH;
+    process.env.PATH = `${bin}:${path ?? ""}`;
+    try {
+      let result: Run;
+      if (kind === "approve") {
+        await writeJsonAtomic(paths.session, session(tour, { repo: bin, tourFingerprint: tourFingerprint(bin, foreign), closedAt: "t9" }));
+        await writeJsonAtomic(requestPath(paths, "q-1"), { ...decision(1, "agree"), stop: { ...stop, number: 1 } });
+        await writeJsonAtomic(requestPath(paths, "q-2"), decision(2, "agree"));
+        result = await run(runApprove, [tour], dir);
+        expect(result.stderr).toBe("tour approve: PR host attacker.example is not a remote of this repository; refusing to send credentials there\n");
+      } else {
+        await writeJsonAtomic(paths.session, session(tour, { repo: bin }));
+        await writeJsonAtomic(requestPath(paths, "q-1"), { id: "q-1", seq: 1, at: "t1", kind, stop, body: "- Extra attempt." });
+        result = await run(runAnswer, [tour, "q-1", "--text", "Fix it."], dir, noNotes);
+        expect(result.stderr).toContain("PR host attacker.example is not a remote of this repository; refusing to send credentials there");
+        expect(await Bun.file(answerPath(paths, "q-1")).exists()).toBe(false);
+      }
+      expect(result.result).toEqual({ kind: "exit", code: 1 });
+      expect(await Bun.file(callsPath).exists()).toBe(false);
     } finally {
       if (path === undefined) delete process.env.PATH;
       else process.env.PATH = path;

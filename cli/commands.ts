@@ -14,7 +14,7 @@ import {
 } from "../core/src/index";
 import { answerPath, mailboxPaths, readMailbox, readJson, writeJsonAtomic, type MailboxPaths } from "../core/src/mailbox";
 import { writeLine, type CliContext, type CliResult } from "./context";
-import { githubApproveArgs, githubCommentArgs, parsePullRequestUrl, runGh, reviewUrl } from "./github";
+import { assertPrHostIsRemote, githubApproveArgs, githubCommentArgs, parsePullRequestUrl, runGh, reviewUrl } from "./github";
 import { assertSessionTour, pinTourRefs } from "./session";
 
 const WAIT_DEFAULT_SECONDS = 90;
@@ -206,6 +206,7 @@ export async function runApprove(args: readonly string[], ctx: CliContext): Prom
       await writeLine(ctx.stdout, { status: "already-approved", url: approved.url });
       return { kind: "exit", code: 0 };
     }
+    await assertPrHostIsRemote(session.repo, target);
     const api = ["api", "--hostname", target.host];
     const endpoint = `repos/${target.owner}/${target.repo}/pulls/${target.number}`;
     const pr: unknown = JSON.parse(await runGh([...api, endpoint], session.repo));
@@ -278,6 +279,7 @@ export async function runAnswer(args: readonly string[], ctx: CliContext): Promi
         await writeLine(ctx.stderr, 'tour answer: tour has no PR url; add "url" to the tour or post the comment yourself');
         return { kind: "exit", code: 1 };
       }
+      await assertPrHostIsRemote(box.session.repo, target);
       const result: unknown = JSON.parse(await runGh(githubCommentArgs(target, box.session.head, request.stop.anchor, text), box.session.repo));
       if (typeof result !== "object" || result === null || !("html_url" in result) || typeof result.html_url !== "string") {
         throw new Error("gh returned no comment html_url");
