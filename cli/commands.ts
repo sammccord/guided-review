@@ -300,7 +300,7 @@ export async function runAnswer(args: readonly string[], ctx: CliContext): Promi
     await writeLine(ctx.stderr, `tour answer: ${error instanceof Error ? error.message : String(error)}`);
     return { kind: "exit", code: 1 };
   }
-  await writeJsonAtomic(answerPath(paths, request.id), { id: request.id, commentId, text: parsed.text, at: now() });
+  await writeJsonAtomic(answerPath(paths, request.id), { id: request.id, commentId, text, at: now() });
   await writeLine(ctx.stdout, { id: request.id, status: "posted", commentId });
   return { kind: "exit", code: 0 };
 }

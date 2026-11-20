@@ -300,6 +300,18 @@ else console.log(JSON.stringify(${JSON.stringify(scenario === "bad-response" ? {
     }
   });
 
+  test("ask answers preserve the exact text", async () => {
+    const tour = join(dir, "ask.tour.json");
+    const paths = mailboxPaths(tour);
+    const text = "Reworded\n\nKeep this paragraph.";
+    await writeJsonAtomic(paths.session, session(tour));
+    const request: Request = { id: "q-1", seq: 1, at: "t1", kind: "ask", stop, anchor, text: "Why?" };
+    await writeJsonAtomic(requestPath(paths, request.id), request);
+    const result = await run(runAnswer, [tour, "q-1", "--text", text], dir, noNotes);
+    expect(result.result).toEqual({ kind: "exit", code: 0 });
+    expect((await Bun.file(answerPath(paths, "q-1")).json()).text).toBe(text);
+  });
+
   test("a host without notes records a process-free answer without invoking Hunk", async () => {
     const bin = mkdtempSync(join(dir, "no-notes-bin-"));
     const tour = join(bin, "answer.tour.json");
@@ -336,7 +348,7 @@ else console.log(JSON.stringify(${JSON.stringify(scenario === "bad-response" ? {
     const tour = join(bin, "post.tour.json");
     const paths = mailboxPaths(tour);
     const callsPath = join(bin, "calls.jsonl");
-    const text = "Use < instead of <= to avoid an extra attempt.";
+    const text = "Reworded";
     const htmlUrl = "https://github.example.com/o/r/pull/42#discussion_r123";
     await writeJsonAtomic(tour, { url: "https://github.example.com/o/r/pull/42" });
     await writeJsonAtomic(paths.session, session(tour, { repo: bin }));
@@ -378,7 +390,7 @@ console.log(JSON.stringify("${command}" === "gh"
         expect(calls.map((call) => call.command)).toEqual(hostNotes ? ["gh", "hunk", "hunk"] : ["gh"]);
         if (hostNotes) expect(calls[2].args).toEqual(sessionAddArgs({ kind: "anchored", anchor, summary, rationale: `${text}\n\n${htmlUrl}` }, "mine"));
         expect(json(result.stdout)).toEqual({ id: "q-1", status: "posted", commentId: hostNotes ? "mcp:42" : null });
-        expect(await Bun.file(answerPath(paths, "q-1")).json()).toMatchObject({ id: "q-1", commentId: hostNotes ? "mcp:42" : null, text });
+        expect(await Bun.file(answerPath(paths, "q-1")).json()).toMatchObject({ id: "q-1", commentId: hostNotes ? "mcp:42" : null, text: `${text}\n\n${htmlUrl}` });
         expect(json((await run(runAnswer, [tour, "q-1", "--text", text], dir)).stdout).status).toBe("already-answered");
         expect((await Bun.file(callsPath).text()).trim().split("\n")).toHaveLength(hostNotes ? 3 : 1);
       }
