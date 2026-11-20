@@ -2,12 +2,12 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { CliContext, CliResult } from "./context";
+import { noNotes, type CliContext, type CliResult, type NoteSink } from "./context";
 import type { Decision, Request, SessionRecord, Tour } from "../core/src/index";
 import { answerPath, mailboxPaths, requestPath, writeJsonAtomic } from "../core/src/mailbox";
 import { runAnswer, runApprove, runWait } from "./commands";
 import { githubApproveArgs, githubCommentArgs } from "./github";
-import { sessionAddArgs } from "./hunk";
+import { hunkNotes, sessionAddArgs } from "./hunk";
 import { tourFingerprint } from "./session";
 
 const anchor = { path: "src/a.ts", side: "new" as const, line: 10 };
@@ -25,11 +25,12 @@ interface Run {
   stderr: string;
 }
 
-async function run(handler: typeof runWait, args: string[], cwd: string): Promise<Run> {
+async function run(handler: typeof runWait, args: string[], cwd: string, notes: NoteSink = hunkNotes): Promise<Run> {
   let stdout = "";
   let stderr = "";
   const ctx: CliContext = {
     cwd,
+    notes,
     signal: new AbortController().signal,
     program: `hunk --extension ${new URL("..", import.meta.url).pathname.replace(/\/$/, "")} tour`,
     stdout: { write: async (chunk) => void (stdout += String(chunk)) },
@@ -299,12 +300,38 @@ else console.log(JSON.stringify(${JSON.stringify(scenario === "bad-response" ? {
     }
   });
 
+  test("a host without notes records a process-free answer without invoking Hunk", async () => {
+    const bin = mkdtempSync(join(dir, "no-notes-bin-"));
+    const tour = join(bin, "answer.tour.json");
+    const paths = mailboxPaths(tour);
+    const callsPath = join(bin, "hunk-called");
+    writeFileSync(join(bin, "hunk"), `#!/bin/sh\ntouch '${callsPath}'\nexit 1\n`, { mode: 0o755 });
+    const { pid, ...hostSession } = session(tour);
+    await writeJsonAtomic(paths.session, hostSession);
+    await writeJsonAtomic(requestPath(paths, "q-1"), decision(1, "unsure"));
+    const path = process.env.PATH;
+    process.env.PATH = `${bin}:${path ?? ""}`;
+    try {
+      const result = await run(runAnswer, [tour, "q-1", "--text", "Answer"], dir, noNotes);
+      expect(result).toEqual({ result: { kind: "exit", code: 0 }, stdout: '{"id":"q-1","status":"posted","commentId":null}\n', stderr: "" });
+      expect(await Bun.file(answerPath(paths, "q-1")).json()).toMatchObject({ id: "q-1", commentId: null, text: "Answer" });
+      expect(await Bun.file(callsPath).exists()).toBe(false);
+      await expect(hunkNotes.post({ kind: "anchored", anchor, summary: "Answer", rationale: "" }, hostSession)).rejects.toThrow("the Hunk session for this tour is not running; reopen the tour");
+      expect(await Bun.file(callsPath).exists()).toBe(false);
+    } finally {
+      if (path === undefined) delete process.env.PATH;
+      else process.env.PATH = path;
+    }
+  });
+
   test.each([
-    ["comment", "Posted to PR: Loop bound", false],
-    ["comment", "Posted to PR: Loop bound", true],
-    ["reviewer-comment", "Commented on PR: Loop bound", false],
-    ["reviewer-comment", "Commented on PR: Loop bound", true],
-  ] as const)("%s answer posts to GitHub before Hunk, summary=%s gh failure=%s", async (kind, summary, failGh) => {
+    ["comment", "Posted to PR: Loop bound", false, true],
+    ["comment", "Posted to PR: Loop bound", true, true],
+    ["reviewer-comment", "Commented on PR: Loop bound", false, true],
+    ["reviewer-comment", "Commented on PR: Loop bound", true, true],
+    ["comment", "Posted to PR: Loop bound", false, false],
+    ["reviewer-comment", "Commented on PR: Loop bound", false, false],
+  ] as const)("%s answer posts to GitHub first, summary=%s gh failure=%s host notes=%s", async (kind, summary, failGh, hostNotes) => {
     const bin = mkdtempSync(join(dir, "bin-"));
     const tour = join(bin, "post.tour.json");
     const paths = mailboxPaths(tour);
@@ -333,7 +360,7 @@ console.log(JSON.stringify("${command}" === "gh"
     const path = process.env.PATH;
     process.env.PATH = `${bin}:${path ?? ""}`;
     try {
-      const result = await run(runAnswer, [tour, "q-1", "--text", text], dir);
+      const result = await run(runAnswer, [tour, "q-1", "--text", text], dir, hostNotes ? hunkNotes : noNotes);
       const calls = (await Bun.file(callsPath).text()).trim().split("\n").map(json);
       expect(calls[0]).toEqual({
         command: "gh",
@@ -348,11 +375,12 @@ console.log(JSON.stringify("${command}" === "gh"
       } else {
         expect(result.result).toEqual({ kind: "exit", code: 0 });
         expect(result.stderr).toBe("");
-        expect(calls.map((call) => call.command)).toEqual(["gh", "hunk", "hunk"]);
-        expect(calls[2].args).toEqual(sessionAddArgs({ kind: "anchored", anchor, summary, rationale: `${text}\n\n${htmlUrl}` }, "mine"));
-        expect(await Bun.file(answerPath(paths, "q-1")).json()).toMatchObject({ id: "q-1", commentId: "mcp:42", text });
+        expect(calls.map((call) => call.command)).toEqual(hostNotes ? ["gh", "hunk", "hunk"] : ["gh"]);
+        if (hostNotes) expect(calls[2].args).toEqual(sessionAddArgs({ kind: "anchored", anchor, summary, rationale: `${text}\n\n${htmlUrl}` }, "mine"));
+        expect(json(result.stdout)).toEqual({ id: "q-1", status: "posted", commentId: hostNotes ? "mcp:42" : null });
+        expect(await Bun.file(answerPath(paths, "q-1")).json()).toMatchObject({ id: "q-1", commentId: hostNotes ? "mcp:42" : null, text });
         expect(json((await run(runAnswer, [tour, "q-1", "--text", text], dir)).stdout).status).toBe("already-answered");
-        expect((await Bun.file(callsPath).text()).trim().split("\n")).toHaveLength(3);
+        expect((await Bun.file(callsPath).text()).trim().split("\n")).toHaveLength(hostNotes ? 3 : 1);
       }
     } finally {
       if (path === undefined) delete process.env.PATH;

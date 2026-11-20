@@ -15,7 +15,6 @@ import {
 import { answerPath, mailboxPaths, readMailbox, readJson, writeJsonAtomic, type MailboxPaths } from "../core/src/mailbox";
 import { writeLine, type CliContext, type CliResult } from "./context";
 import { githubApproveArgs, githubCommentArgs, parsePullRequestUrl, runGh, reviewUrl } from "./github";
-import { commentIdOf, runHunk, sessionAddArgs, sessionIdForPid } from "./hunk";
 import { assertSessionTour, pinTourRefs } from "./session";
 
 const WAIT_DEFAULT_SECONDS = 90;
@@ -296,14 +295,9 @@ export async function runAnswer(args: readonly string[], ctx: CliContext): Promi
   }
   let commentId: string | null;
   try {
-    const sessionId = box.session.pid === undefined ? null : sessionIdForPid(JSON.parse(await runHunk(["session", "list", "--json"])), box.session.pid);
-    if (!sessionId) {
-      await writeLine(ctx.stderr, `tour answer: the Hunk session for this tour (pid ${box.session.pid}) is not running; reopen the tour`);
-      return { kind: "exit", code: 1 };
-    }
-    commentId = commentIdOf(await runHunk(sessionAddArgs(plan, sessionId)));
+    commentId = await ctx.notes.post(plan, box.session);
   } catch (error) {
-    await writeLine(ctx.stderr, `tour answer: hunk session failed: ${error instanceof Error ? error.message : String(error)}`);
+    await writeLine(ctx.stderr, `tour answer: ${error instanceof Error ? error.message : String(error)}`);
     return { kind: "exit", code: 1 };
   }
   await writeJsonAtomic(answerPath(paths, request.id), { id: request.id, commentId, text: parsed.text, at: now() });

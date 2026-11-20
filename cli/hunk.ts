@@ -1,5 +1,21 @@
 import { execFile } from "node:child_process";
 import type { PostPlan } from "../core/src/index";
+import type { NoteSink } from "./context";
+
+export const hunkNotes: NoteSink = {
+  async post(plan, session) {
+    if (session.pid === undefined) throw new Error("the Hunk session for this tour is not running; reopen the tour");
+    const notRunning = new Error(`the Hunk session for this tour (pid ${session.pid}) is not running; reopen the tour`);
+    try {
+      const sessionId = sessionIdForPid(JSON.parse(await runHunk(["session", "list", "--json"])), session.pid);
+      if (!sessionId) throw notRunning;
+      return commentIdOf(await runHunk(sessionAddArgs(plan, sessionId)));
+    } catch (error) {
+      if (error === notRunning) throw error;
+      throw new Error(`hunk session failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  },
+};
 
 /** `--repo` is ambiguous when two Hunk sessions share the worktree, so answers address the mailbox owner's session by pid. */
 export function sessionIdForPid(list: unknown, pid: number): string | null {

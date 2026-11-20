@@ -48,6 +48,7 @@ import { QA_USAGE, runAnswer, runApprove, runWait } from "../cli/commands";
 import { toSidecar } from "./sidecar";
 import { groupFilesByDirectory } from "./files";
 import { pinTourRefs } from "../cli/session";
+import { hunkNotes } from "../cli/hunk";
 import { registerSettings, TourSettings } from "./settings";
 
 const HUNK_PROGRAM = `hunk --extension ${resolve(import.meta.dir, "..")} tour`;
@@ -110,9 +111,9 @@ async function writeSidecar(tour: Tour): Promise<string> {
 
 async function runTourCli(args: readonly string[], ctx: ExtensionCliCommandContext, settings: TourSettings): Promise<ExtensionCliCommandResult> {
   const [subcommand, file, ...extra] = args;
-  if (subcommand === "wait") return runWait(args.slice(1), { ...ctx, program: HUNK_PROGRAM });
-  if (subcommand === "answer") return runAnswer(args.slice(1), { ...ctx, program: HUNK_PROGRAM });
-  if (subcommand === "approve") return runApprove(args.slice(1), { ...ctx, program: HUNK_PROGRAM });
+  if (subcommand === "wait") return runWait(args.slice(1), { ...ctx, program: HUNK_PROGRAM, notes: hunkNotes });
+  if (subcommand === "answer") return runAnswer(args.slice(1), { ...ctx, program: HUNK_PROGRAM, notes: hunkNotes });
+  if (subcommand === "approve") return runApprove(args.slice(1), { ...ctx, program: HUNK_PROGRAM, notes: hunkNotes });
   const fresh = subcommand === "open" && extra.length === 1 && extra[0] === "--fresh";
   if ((subcommand !== "check" && subcommand !== "open") || !file || (extra.length > 0 && !fresh)) {
     await writeLines(ctx.stderr, QA_USAGE);

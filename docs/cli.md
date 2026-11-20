@@ -100,7 +100,7 @@ Errors:
 hunk tour answer <tour.json> <id> --text <answer>
 ```
 
-Answers one request from `wait`. The answer appears in Hunk as a note, threaded under the reviewer's note when the request came from one. `tour answer` then records the answer in `answered/<id>.json`. The Hunk session for the tour must be running, and `hunk` must be on your `PATH`.
+Answers one request from `wait`. The host's `NoteSink` posts the note before `tour answer` records the answer in `answered/<id>.json`. Hunk posts a note, threaded under the reviewer's note when the request came from one; its session must be running, and `hunk` must be on your `PATH`. A host without notes only records the answer, with `commentId: null` in the answer file and stdout.
 
 You can run it by hand. Take the `id` from the `inbox/` file name, or from the `next` field of a `pending` result.
 
