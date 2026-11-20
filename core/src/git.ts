@@ -30,7 +30,11 @@ export async function resolveDiffRefs(cwd: string, base: string, head: string): 
 }
 
 /** Run git with hunk's own diff arguments and collect hunk ranges per path. */
-export function readDiffRanges(cwd: string, base: string, head: string): Promise<DiffRanges> {
+export async function readDiffRanges(cwd: string, base: string, head: string): Promise<DiffRanges> {
+  return parseDiffRanges(await readDiffText(cwd, base, head));
+}
+
+export function readDiffText(cwd: string, base: string, head: string): Promise<string> {
   const range = `${base}...${head}`;
   const args = ["-C", cwd, ...GIT_PREFIX_ARGS, "diff", "--no-ext-diff", "--find-renames", "--no-color", range];
   return new Promise((resolve, reject) => {
@@ -40,7 +44,7 @@ export function readDiffRanges(cwd: string, base: string, head: string): Promise
         reject(new Error(`git diff ${range} failed in ${cwd}: ${detail}`));
         return;
       }
-      resolve(parseDiffRanges(String(stdout)));
+      resolve(String(stdout));
     });
   });
 }

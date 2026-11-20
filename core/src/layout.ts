@@ -9,7 +9,7 @@ export interface ReviewLayout {
   approved: string;
 }
 
-function joinPosixPaths(...parts: string[]): string {
+export function joinPosixPaths(...parts: string[]): string {
   const path = parts.join("/");
   const segments: string[] = [];
   for (const segment of path.split("/")) {

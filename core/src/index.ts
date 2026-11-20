@@ -7,3 +7,4 @@ export * from "./links";
 export * from "./stack";
 export * from "./qa";
 export * from "./layout";
+export * from "./stage";

@@ -84,9 +84,13 @@ function encode(value: unknown): string {
 }
 
 export async function writeJsonAtomic(path: string, value: unknown): Promise<void> {
+  await writeTextAtomic(path, encode(value));
+}
+
+export async function writeTextAtomic(path: string, text: string): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
   const temp = tempPath(path);
-  await writeFile(temp, encode(value));
+  await writeFile(temp, text);
   await rename(temp, path);
 }
 
