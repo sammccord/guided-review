@@ -40,7 +40,6 @@ describe("mailbox", () => {
     writeFileSync(requestPath(paths, "q-3"), "{ not json");
     writeFileSync(join(paths.inbox, "q-4.json.123.0.tmp"), JSON.stringify(ask(4)));
     writeFileSync(join(paths.inbox, "notes.txt"), "ignored");
-    mkdirSync(join(paths.answered, "q-5.json"));
 
     const box = await readMailbox(paths);
     expect(box.session).toEqual(session);
@@ -49,6 +48,8 @@ describe("mailbox", () => {
     expect(box.heartbeat).toEqual({ pid: 99, until: "t5" });
     expect(nextSeq(box)).toBe(3);
     expect(readdirSync(paths.root).sort()).toEqual(["agent.json", "answered", "inbox", "session.json"]);
+    mkdirSync(join(paths.answered, "q-5.json"));
+    await expect(readMailbox(paths)).rejects.toThrow("EISDIR");
   });
 
   test("active review pointers pin generation paths and read namespaced requests", async () => {

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   answerFile, buildRequest, currentPointerPath, emptyMailbox, encodeJson, patchSessionVia,
-  postRequestVia, readMailboxVia, requestFile, resolveLayoutVia, reviewLayout,
+  postRequestVia, readMailboxVia, requestFile, resolveLayoutVia, reviewLayout, TransientReadError,
   type MailboxPort, type RequestBody, type SessionRecord,
 } from "../src/index";
 import { fsPort, mailboxPaths, writeJsonAtomic } from "../src/mailbox";
@@ -170,4 +170,132 @@ test("fsPort request bytes match the existing atomic writer and pointer errors m
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+const sessionLayout = reviewLayout(tourPath, reviewId);
+
+function createCappedPort(cap: number) {
+  const memory = createMemoryPort();
+  const overwritten: string[] = [];
+  const written = new Set<string>();
+  let inFlight = 0;
+  const port: MailboxPort = {
+    ...memory,
+    async readText(path) {
+      inFlight++;
+      try {
+        await new Promise(resolve => setTimeout(resolve, 0));
+        if (inFlight > cap) throw new Error(`bridge: more than ${cap} reads in flight`);
+        return await memory.readText(path);
+      } finally {
+        inFlight--;
+      }
+    },
+    async writeText(path, text) {
+      if (written.has(path)) overwritten.push(path);
+      written.add(path);
+      await memory.writeText(path, text);
+    },
+  };
+  return { port, overwritten };
+}
+
+test("a bridge that caps reads in flight never loses or overwrites a request", async () => {
+  const { port, overwritten } = createCappedPort(32);
+  await port.writeText(sessionLayout.session, encodeJson(session));
+  const sent: string[] = [];
+  for (let index = 0; index < 40; index++) {
+    const request = await postRequestVia(port, sessionLayout, body, `t${index}`);
+    sent.push(request.id);
+    if (index < 10) await port.writeText(answerFile(sessionLayout, request.id), encodeJson({ id: request.id, commentId: `n${index}`, text: "ok", at: "t" }));
+  }
+  const inbox = (await port.listNames(sessionLayout.inbox)).map(name => name.slice(0, -5)).sort();
+  expect(overwritten.filter(path => path.startsWith(sessionLayout.inbox))).toEqual([]);
+  expect(new Set(sent).size).toBe(40);
+  expect(inbox).toEqual([...sent].sort());
+  const box = await readMailboxVia(port, sessionLayout);
+  expect(box.requests.map(request => request.id as string)).toEqual(sent);
+  expect(box.answers.size).toBe(10);
+});
+
+test("a failed read propagates instead of reading as missing", async () => {
+  const memory = createMemoryPort();
+  const failing = requestFile(sessionLayout, `q-${reviewId}-1`);
+  const port: MailboxPort = {
+    ...memory,
+    async readText(path) {
+      if (path === failing) throw new Error("bridge: read rejected");
+      return memory.readText(path);
+    },
+  };
+  await port.writeText(sessionLayout.session, encodeJson(session));
+  await port.writeText(failing, encodeJson(buildRequest({ ...emptyMailbox(), session }, body, "t1")));
+  await expect(readMailboxVia(port, sessionLayout)).rejects.toThrow("bridge: read rejected");
+  await expect(postRequestVia(port, sessionLayout, body, "t2")).rejects.toThrow("bridge: read rejected");
+  expect(await memory.listNames(sessionLayout.inbox)).toEqual([`q-${reviewId}-1.json`]);
+  const listFailing: MailboxPort = { ...memory, async listNames() { throw new Error("bridge: list rejected"); } };
+  await expect(readMailboxVia(listFailing, sessionLayout)).rejects.toThrow("bridge: list rejected");
+});
+
+test("a partially written request reserves its sequence", async () => {
+  const port = createMemoryPort();
+  await port.writeText(sessionLayout.session, encodeJson(session));
+  const partial = requestFile(sessionLayout, `q-${reviewId}-3`);
+  await port.writeText(partial, encodeJson(buildRequest({ ...emptyMailbox(), session }, body, "t0")).slice(0, 20));
+  const request = await postRequestVia(port, sessionLayout, body, "t1");
+  expect(request.seq).toBe(4);
+  expect(await port.readText(partial)).toHaveLength(20);
+});
+
+test("postRequestVia skips an id whose file exists even when the listing misses it, and gives up after five tries", async () => {
+  const memory = createMemoryPort();
+  const port: MailboxPort = { ...memory, async listNames() { return []; } };
+  for (let seq = 1; seq <= 4; seq++) await memory.writeText(requestFile(layout, `q-${seq}`), "{");
+  expect((await postRequestVia(port, layout, body, "t1")).id).toBe("q-5");
+  await memory.writeText(requestFile(layout, "q-6"), "{");
+  await expect(postRequestVia(port, layout, body, "t2")).rejects.toThrow("could not reserve a request number");
+});
+
+test("concurrent postRequestVia calls on one port never write the same file", async () => {
+  const { port, overwritten } = createCappedPort(1000);
+  await port.writeText(sessionLayout.session, encodeJson(session));
+  const requests = await Promise.all([1, 2, 3].map(index => postRequestVia(port, sessionLayout, body, `t${index}`)));
+  expect(new Set(requests.map(request => request.id)).size).toBe(3);
+  expect(overwritten.filter(path => path.startsWith(sessionLayout.inbox))).toEqual([]);
+});
+
+test("patchSessionVia keeps terminal timestamps a patch does not set", async () => {
+  const port = createMemoryPort();
+  await port.writeText(layout.session, encodeJson({ ...session, finishedAt: "t5", closedAt: "t6" }));
+  const merged = await patchSessionVia(port, layout, { activeAt: "t7", finishedAt: undefined, closedAt: undefined });
+  expect(merged).toEqual({ ...session, activeAt: "t7", finishedAt: "t5", closedAt: "t6" });
+  expect(JSON.parse((await port.readText(layout.session))!)).toEqual(merged);
+});
+
+test("patchSessionVia propagates a failed read and retries a half-written session once", async () => {
+  const memory = createMemoryPort();
+  const failing: MailboxPort = { ...memory, async readText() { throw new Error("bridge: read rejected"); } };
+  await expect(patchSessionVia(failing, layout, { activeAt: "t1" })).rejects.toThrow("bridge: read rejected");
+  const reads: string[] = [encodeJson(session).slice(0, 10), encodeJson(session)];
+  const healing: MailboxPort = { ...memory, async readText() { return reads.shift(); } };
+  expect(await patchSessionVia(healing, layout, { activeAt: "t1" })).toEqual({ ...session, activeAt: "t1" });
+  let halfReads = 0;
+  const halves: MailboxPort = {
+    ...memory,
+    async readText() { halfReads++; return "{"; },
+    async writeText() { throw new Error("must not write over a half-written session"); },
+  };
+  expect(await patchSessionVia(halves, layout, { activeAt: "t1" })).toBeNull();
+  expect(halfReads).toBe(2);
+});
+
+test("a half-written review pointer is a TransientReadError", async () => {
+  const port = createMemoryPort();
+  await port.writeText(currentPointerPath(tourPath), "{\"reviewId\":");
+  const error = await resolveLayoutVia(port, tourPath).catch((caught: unknown) => caught);
+  expect(error).toBeInstanceOf(TransientReadError);
+  await port.writeText(currentPointerPath(tourPath), encodeJson({}));
+  const invalid = await resolveLayoutVia(port, tourPath).catch((caught: unknown) => caught);
+  expect(invalid).not.toBeInstanceOf(TransientReadError);
+  expect(invalid).toHaveProperty("message", "invalid review pointer");
 });
