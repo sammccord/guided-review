@@ -14,6 +14,8 @@ A review passes through five steps. The agent runs the first four. Hunk runs the
 
 For a sandboxed renderer such as Toshi's browser panel, the agent runs `guided-review stage <worktree> <tour.json>` instead of opening Hunk. This writes the pinned tour, diff, metadata, and mailbox under `~/.mux/shared/guided-review/`. The panel reads the bundle and writes requests there; the agent uses the staged tour path with `wait` and `answer`. No git or arbitrary filesystem access is needed inside the panel.
 
+In Toshi, the Guided Review plugin bundles the skill and command. After `stage`, the agent calls `guided_review_open` with the returned slug to open the tour in the right-rail panel. The panel uses the same mailbox and agent wait/answer loop, with no Hunk required.
+
 ### What happens inside Hunk
 
 `hunk tour` is a CLI command the extension registers in [`extension/index.tsx`](../extension/index.tsx). On `tour open`, the extension validates the tour the same way `tour check` does, keeps the parsed tour in memory, and writes a sidecar file to a unique `hunk-guided-review-*/context.json` directory under the system temp directory. Each open owns its sidecar, even when two tours share a head; shutdown removes it. Then it hands control back to Hunk with a new command line:

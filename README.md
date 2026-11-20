@@ -79,6 +79,8 @@ The same stops also appear in the diff as inline tour notes:
 
 ## Requirements
 
+In Toshi, the Guided Review plugin bundles the skill and CLI for its panel. It needs Node.js 24 or newer instead of Hunk.
+
 - `hunk` 0.22.0 or newer. Install it with `curl -fsSL https://hunk.dev/install.sh | sh`, `brew install hunk`, or `npm i -g hunkdiff`. [Hunk's install guide](https://github.com/modem-dev/hunk#install) lists the other methods.
 - `git`.
 - `python3`, for `scripts/prepare.py`.

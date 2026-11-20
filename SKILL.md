@@ -1,6 +1,6 @@
 ---
 name: guided-review
-description: Audit a pull request, a stack of pull requests, or a branch, pick the changes that need human judgment, and open them as ordered, annotated tours of small stops grouped into tracks in the Hunk diff viewer, one tour per stack layer. Use for "guided review", "tour this PR", "review tour", "walk me through this PR", or a PR link, branch name, or shared tour JSON file with a request to review it in hunk. Posts to GitHub only the stops the reviewer chooses with Post finding to PR and the comments the reviewer writes with Comment on PR.
+description: Audit a pull request, a stack of pull requests, or a branch, pick the changes that need human judgment, and open them as ordered, annotated tours of small stops grouped into tracks in the Hunk diff viewer, one tour per stack layer. Use for "guided review", "tour this PR", "review tour", "walk me through this PR", or a PR link, branch name, or shared tour JSON file with a request to review it in hunk. Posts to GitHub only the stops the reviewer chooses with Post finding to PR and the comments the reviewer writes with Comment on PR. Also works in the Toshi desktop app, where the tour opens in the Guided Review panel.
 ---
 
 # Guided review
@@ -15,7 +15,7 @@ The reviewer's time is the scarce resource. Do the exhaustive reading yourself, 
 
 `<skill>` below means the directory containing this file.
 
-Requires `git`, `python3`, `hunk` 0.22 or newer, and `gh` authenticated for the PR's host (`gh auth status --hostname <host>`). GitHub Enterprise works because nothing goes through `hunk gh`.
+Requires `git`, `python3`, and `gh` authenticated for the PR's host (`gh auth status --hostname <host>`). Outside Toshi, `hunk` 0.22 or newer is required. In Toshi, the bundled `guided-review` command needs `node` 24 or newer instead. GitHub Enterprise works because nothing goes through `hunk gh`.
 
 ## 1. Prepare the worktree
 
@@ -130,9 +130,13 @@ From the worktree:
 hunk --extension <skill> tour check <tour.json>
 ```
 
+In Toshi, run `guided-review check <tour.json>` from the worktree instead.
+
 It validates the schema and confirms every anchor falls inside a hunk of `base...head`. Fix every reported stop and rerun until it prints `ok`. Then clear every warning: split oversized stops and rewrite paragraphs as bullets.
 
 ## 8. Open it
+
+In Toshi, use the stage and open instructions below instead of launching Hunk.
 
 ```bash
 <skill>/scripts/open-tour.sh <worktree> <tour.json>
@@ -148,7 +152,30 @@ In hunk, the Tour pane on the right lists the tracks, each with its summary and 
 
 The current stop shows three buttons with their keys: **Ask agent** (`Q`), **Comment on PR** (`C`), and **Post finding to PR**. The agent's ask line reads **To confirm:**. A **Finish review** button (`F`) sits in the pane header. `V` has no button. Marks are optional.
 
+## Toshi
+
+You are in Toshi when the `guided_review_open` tool is available. The Guided Review plugin provides it and bundles this skill and the `guided-review` command. In Toshi, use the commands below wherever a Hunk command appears. Otherwise use the Hunk commands.
+
+Here, `guided-review` means `node <skill>/bin/guided-review.mjs`. The plugin bundles it next to this file. It does not exist in a plain checkout. The panel needs no Hunk, and `hunk` is not required in Toshi.
+
+For step 8, run from the worktree:
+
+```bash
+guided-review stage <worktree> <tour.json>
+```
+
+Add `--fresh` for a new review of the same tour. It reads the session id from `MUX_PTY_ID` and prints one JSON line with `slug`, `dir`, `tour`, the staged tour path, and `reviewId`. Then call `guided_review_open` with that `slug` once per review. For a stack, stage and open the layers bottom first. The panel shows the tour in the right rail. From here on, use the staged `tour` path from that output in every command, never the original tour path.
+
 ## 9. Answer the reviewer
+
+In Toshi, run these from the worktree with every open staged tour of a stack at once:
+
+```bash
+guided-review wait <staged tour>... [--timeout <seconds>] [--away <minutes>]
+guided-review answer <staged tour> <id> --text '<answer>'
+```
+
+The JSON, request kinds, and rules below for `pending`, `idle`, `away`, `finished`, and `closed` are the same in Toshi, including the reword and verbatim rules for `comment` and `reviewer-comment`. An answer appears in the panel's thread for that stop, including the GitHub link for a posted PR comment. The reviewer's buttons are **Ask agent**, **Comment on PR**, **Post finding to PR**, **agree/disagree/unsure**, a **+** on any diff line, and **Finish review**.
 
 Hunk shows a "Waiting for the agent" placeholder under each unanswered request and a spinner in the Tour pane, and removes the placeholder once answered.
 
@@ -188,6 +215,8 @@ Only when eligible and free of qualms, end your reply by explicitly asking: “A
 ```bash
 hunk --extension <skill> tour approve <tour.json> --body '<short summary>'
 ```
+
+In Toshi, run `guided-review approve <staged tour> --body '<short summary>'` instead.
 
 Never approve without that yes. For a stack, get confirmation for each layer's PR and head, then run one approval per confirmed layer tour. The CLI rechecks the verdict, any stop whose latest decision is disagree, and the current PR head. It refuses any blocker. It records approval in `approved.json` and avoids reposting an approval at the same head.
 
