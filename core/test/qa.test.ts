@@ -325,6 +325,18 @@ describe("reviewEnd", () => {
   const alive = () => true;
   const dead = () => false;
 
+  test("process-free sessions end only through explicit markers", () => {
+    const { pid, ...hostSession } = session;
+    expect(parseSession(hostSession)).toEqual(hostSession);
+    expect(parseSession(hostSession)).not.toHaveProperty("pid");
+    for (const pid of [0, -1, 1.5, null]) expect(parseSession({ ...session, pid })).toBeNull();
+    expect(reviewEnd(mailbox([], [], { session: hostSession }), dead)).toBeNull();
+    expect(reviewEnd(mailbox([], [], { session: { ...hostSession, finishedAt: "t" } }), dead)).toEqual({ kind: "finished" });
+    expect(reviewEnd(mailbox([], [], { session: { ...hostSession, closedAt: "t" } }), dead)).toEqual({ kind: "closed" });
+    expect(ownsSession({ ...hostSession }, hostSession)).toBe(true);
+    expect(ownsSession({ ...hostSession, openedAt: "other" }, hostSession)).toBe(false);
+  });
+
   test("needs a session, then finished beats closed, then a dead TUI counts as closed", () => {
     expect(reviewEnd(emptyMailbox(), dead)).toBeNull();
     expect(reviewEnd(mailbox([], [], { session }), alive)).toBeNull();
@@ -337,7 +349,7 @@ describe("reviewEnd", () => {
 describe("ownsSession", () => {
   test("only the same pid and openedAt own the session on disk", () => {
     expect(ownsSession(null, session)).toBe(false);
-    expect(ownsSession({ ...session, pid: session.pid + 1 }, session)).toBe(false);
+    expect(ownsSession({ ...session, pid: 4243 }, { ...session, pid: 4242 })).toBe(false);
     expect(ownsSession({ ...session, openedAt: "2026-10-14T10:00:00Z" }, session)).toBe(false);
     expect(ownsSession({ ...session }, session)).toBe(true);
   });

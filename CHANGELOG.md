@@ -22,6 +22,7 @@ This file lists all notable changes to this project. The format follows [Keep a 
 
 ### Changed
 
+- Review sessions can omit a host process id and end explicitly through `finishedAt` or `closedAt`.
 - Decisions are optional. Silence means agreement with the agent's verdict. Finish no longer asks for confirmation when stops have no decision. Approval hard-blocks only on a non-approve verdict or a stop whose latest decision is `disagree`. The agent judges notes, `unsure` decisions, and posted comments.
 - `tour wait` keeps the agent waiting on `idle` and reports `away` only after 30 minutes without reviewer activity, configurable with `--away`.
 - The `cleanup` command from `prepare.py` also removes the review's `.tour.qa` directory.

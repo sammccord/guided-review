@@ -152,7 +152,7 @@ export function decisionBadge(decision: Decision): string {
 
 /** Called from `tour open`, in the process that becomes the TUI, so `pid` is the TUI's own. */
 export async function openSession(input: Parameters<typeof prepareSession>[0]): Promise<void> {
-  setState(await prepareSession(input));
+  setState(await prepareSession({ ...input, pid: process.pid }));
 }
 
 let sessionWrite: Promise<void> = Promise.resolve();

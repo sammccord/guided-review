@@ -52,6 +52,8 @@ The agent's loop is two commands. `hunk tour wait` writes its heartbeat, polls t
 
 `wait` treats the review as over when `session.json` carries `finishedAt`, set by **Finish review**, or `closedAt`, set when Hunk shuts down, or when the Hunk process id is no longer alive. Reopening an unchanged tour writes a fresh session record in the same review generation and preserves its decisions and answers. A changed repository, PR/layer, base/head, stop order, or tour content starts a new generation; `tour open <tour.json> --fresh` (also accepted by `open-tour.sh`) does so explicitly. Previous generations and legacy mailboxes stay on disk but are not imported into the new review. Request IDs include the generation, so a delayed answer cannot address a new review's request. The agent must never replay historical live notes unless the reviewer explicitly requests an import. An `agree` with no comment needs no reply, so `wait` never returns it as pending. It still appears in the final transcript as `noted`. Hunk 0.22 has no extension status line, so the status text sits at the top of the **Tour** pane, as in `1 waiting · agent listening`. On hosts that have a status line, it is also set there.
 
+Hosts without a process omit `pid` from the session record; only `finishedAt` or `closedAt` ends their review.
+
 ## Sharing a summary after the review
 
 A tour lives in Hunk, and its decisions and Q&A sit in a mailbox under `.git`. To hand the outcome to someone who was not in the session, ask for a summary when you request the review:

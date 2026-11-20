@@ -41,6 +41,15 @@ test("an unchanged tour resumes decisions and answers, but refreshes close/finis
   expect(resumed.box.answers.size).toBe(1);
 });
 
+test("prepareSession omits pid unless the host supplies it", async () => {
+  const input = await setup();
+  const browser = await prepareSession(input);
+  expect(browser.session).not.toHaveProperty("pid");
+  expect(await Bun.file(browser.paths.session).json()).not.toHaveProperty("pid");
+  const hunk = await prepareSession({ ...input, pid: process.pid });
+  expect((await Bun.file(hunk.paths.session).json()).pid).toBe(process.pid);
+});
+
 test.each(["head", "base", "url", "layer", "stop", "order", "fresh", "repo"])("isolates saved history on changed %s", async change => {
   const input = await setup();
   const first = await prepareSession(input);

@@ -29,7 +29,7 @@ export function assertSessionTour(session: SessionRecord, tour: Tour): void {
 }
 
 /** Old generations (including legacy mailboxes) stay on disk but never enter a new review. */
-export async function prepareSession(input: { repo: string; tourPath: string; tour: Tour; fresh?: boolean }) {
+export async function prepareSession(input: { repo: string; tourPath: string; tour: Tour; fresh?: boolean; pid?: number }) {
   const repo = resolve(input.repo);
   const tourPath = resolve(input.tourPath);
   const tour = await pinTourRefs(repo, input.tour);
@@ -40,7 +40,7 @@ export async function prepareSession(input: { repo: string; tourPath: string; to
   const paths = mailboxPaths(tourPath, reviewId);
   const session: SessionRecord = {
     repo, tourPath, head: tour.head, reviewId, tourFingerprint: fingerprint,
-    pid: process.pid, openedAt: new Date().toISOString(),
+    ...(input.pid === undefined ? {} : { pid: input.pid }), openedAt: new Date().toISOString(),
   };
   await writeJsonAtomic(paths.session, session);
   // Publish only after the new session exists; old TUI writers retain their generation's paths.

@@ -60,7 +60,8 @@ export interface SessionRecord {
   repo: string;
   tourPath: string;
   head: string;
-  pid: number;
+  /** A review ends when this process dies; a host with no process omits it and ends the review with finishedAt or closedAt. */
+  pid?: number;
   openedAt: string;
   activeAt?: string;
   finishedAt?: string;
@@ -181,7 +182,7 @@ export function parseHeartbeat(raw: unknown): Heartbeat | null {
 export function parseSession(raw: unknown): SessionRecord | null {
   if (!isObject(raw)) return null;
   const { repo, tourPath, head, pid, openedAt } = raw;
-  if (!isString(repo) || !isString(tourPath) || !isString(head) || !isPositiveInteger(pid) || !isString(openedAt)) return null;
+  if (!isString(repo) || !isString(tourPath) || !isString(head) || (pid !== undefined && !isPositiveInteger(pid)) || !isString(openedAt)) return null;
   const finishedAt = optionalString(raw.finishedAt);
   const closedAt = optionalString(raw.closedAt);
   const activeAt = optionalString(raw.activeAt);
@@ -193,7 +194,7 @@ export function parseSession(raw: unknown): SessionRecord | null {
     repo,
     tourPath,
     head,
-    pid,
+    ...(pid === undefined ? {} : { pid }),
     openedAt,
     ...(reviewId === undefined ? {} : { reviewId }),
     ...(tourFingerprint === undefined ? {} : { tourFingerprint }),
@@ -317,7 +318,7 @@ export function reviewEnd(box: Mailbox, pidAlive: (pid: number) => boolean): Rev
   const { session } = box;
   if (!session) return null;
   if (session.finishedAt !== undefined) return { kind: "finished" };
-  if (session.closedAt !== undefined || !pidAlive(session.pid)) return { kind: "closed" };
+  if (session.closedAt !== undefined || (session.pid !== undefined && !pidAlive(session.pid))) return { kind: "closed" };
   return null;
 }
 

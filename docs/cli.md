@@ -179,7 +179,7 @@ Hunk and the agent never share a process. They exchange files under a directory 
 
 | Path | Writer | Content |
 | --- | --- | --- |
-| `session.json` | Hunk | repo, tour path, head, review id, tour fingerprint, Hunk process id, `openedAt`, `activeAt` after activity, and `finishedAt` or `closedAt` once set |
+| `session.json` | Host | repo, tour path, head, review id, tour fingerprint, optional `pid` (Hunk process id), `openedAt`, `activeAt` after activity, and `finishedAt` or `closedAt` once set |
 | `inbox/<id>.json` | Hunk | one request, never changed after it is written |
 | `answered/<id>.json` | `tour answer` | request id, Hunk comment id, answer text, and time |
 | `agent.json` | `tour wait` | the agent's process id and the time it promised to listen until |

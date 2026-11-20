@@ -76,6 +76,7 @@ test("tour open groups the full diff, keeps narrative navigation, resumes after 
       return readMailbox(mailboxPaths(tourPath));
     };
     const first = await open();
+    expect(first.session!.pid).toBe(process.pid);
     const grouped = await transform(changeset, {} as never);
     expect(grouped.files.map(file => file.path)).toEqual([
       "internal/code/file.go", "internal/code/other-file.go", "internal/code/unannotated.go", "other/service.go",

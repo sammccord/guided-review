@@ -296,7 +296,7 @@ export async function runAnswer(args: readonly string[], ctx: CliContext): Promi
   }
   let commentId: string | null;
   try {
-    const sessionId = sessionIdForPid(JSON.parse(await runHunk(["session", "list", "--json"])), box.session.pid);
+    const sessionId = box.session.pid === undefined ? null : sessionIdForPid(JSON.parse(await runHunk(["session", "list", "--json"])), box.session.pid);
     if (!sessionId) {
       await writeLine(ctx.stderr, `tour answer: the Hunk session for this tour (pid ${box.session.pid}) is not running; reopen the tour`);
       return { kind: "exit", code: 1 };
