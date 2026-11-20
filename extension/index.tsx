@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile, readFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { useEffect, useRef, useSyncExternalStore, type ReactNode } from "react";
@@ -22,11 +22,9 @@ import {
   indexStops,
   initialCursor,
   move,
-  parseTour,
   segmentText,
   stackPosition,
   statusText,
-  validateTour,
   type CommentStatus,
   type Decision,
   type StackLayer,
@@ -39,15 +37,13 @@ import {
   type TourStack,
   type TourStop,
   type Track,
-  type ValidateResult,
   type Verdict,
 } from "../core/src/index";
-import { readDiffRanges } from "../core/src/git";
+import { checkSummary, loadAndCheck } from "../cli/check";
 import { actionLabel, decisionBadge, finish, openSession, QA_KEYS, registerQa, requestAsk, requestComment, requestReviewerComment, useMailbox, useSpinnerFrame, useWaiting, type TourAccess } from "./qa";
 import { QA_USAGE, runAnswer, runApprove, runWait } from "../cli/commands";
 import { toSidecar } from "./sidecar";
 import { groupFilesByDirectory } from "./files";
-import { pinTourRefs } from "../cli/session";
 import { hunkNotes } from "../cli/hunk";
 import { registerSettings, TourSettings } from "./settings";
 
@@ -84,23 +80,6 @@ async function writeLines(writer: ExtensionCliWriter, lines: readonly string[]) 
   if (lines.length > 0) await writer.write(`${lines.join("\n")}\n`);
 }
 
-async function loadAndCheck(file: string, cwd: string): Promise<ValidateResult> {
-  const path = resolve(cwd, file);
-  let raw: unknown;
-  try {
-    raw = JSON.parse(await readFile(path, "utf8"));
-  } catch (error) {
-    return { ok: false, errors: [`cannot read ${path}: ${error instanceof Error ? error.message : String(error)}`] };
-  }
-  const parsed = parseTour(raw);
-  if (!parsed.ok) return parsed;
-  try {
-    return await validateTour(await pinTourRefs(cwd, parsed.tour), (base, head) => readDiffRanges(cwd, base, head));
-  } catch (error) {
-    return { ok: false, errors: [error instanceof Error ? error.message : String(error)] };
-  }
-}
-
 async function writeSidecar(tour: Tour): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), "hunk-guided-review-"));
   sidecarDirectories.add(directory);
@@ -129,15 +108,7 @@ async function runTourCli(args: readonly string[], ctx: ExtensionCliCommandConte
   await writeLines(ctx.stderr, warnings.map((message) => `warning: ${message}`));
 
   if (subcommand === "check") {
-    const fileCount = new Set(stops.map(({ stop }) => stop.path)).size;
-    let stackSuffix = "";
-    if (tour.stack) {
-      const { index, total } = stackPosition(tour.stack);
-      stackSuffix = ` · stack #${tour.stack.number} layer ${index}/${total}`;
-    }
-    await writeLines(ctx.stdout, [
-      `ok: ${stops.length} stops in ${tour.tracks.length} tracks across ${fileCount} files, verdict ${tour.verdict}${stackSuffix}`,
-    ]);
+    await writeLines(ctx.stdout, [checkSummary(result)]);
     return { kind: "exit", code: 0 };
   }
 
