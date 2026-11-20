@@ -4,7 +4,7 @@ Renderer-independent logic for guided-review tours. An agent writes a tour file.
 
 ## Modules
 
-`src/` holds these modules. `index.ts` re-exports every module except `git.ts` and `mailbox.ts`.
+`src/` holds these modules. `index.ts` re-exports every module, including `layout.ts`, except `git.ts` and `mailbox.ts`; its transitive imports need no Node built-ins.
 
 | Module | Exports |
 | --- | --- |
@@ -17,6 +17,7 @@ Renderer-independent logic for guided-review tours. An agent writes a tour file.
 | `navigator.ts` | `initialCursor` and `move`, a pure reducer over `next`, `prev`, `nextTrack`, `prevTrack`, `goto`, `restart`, `follow`, and `back`, plus `TourCursor`, `TourMove`, and `MoveResult` |
 | `qa.ts` | The reviewer-to-agent Q&A model: `Request` (`question`, `followup`, `ask`, `decision`), `Answer`, `Heartbeat`, `SessionRecord`, `Mailbox`, the `parse*` boundary functions, and the projections `classifyNote`, `needsReply`, `pending`, `decisions`, `agentStatus`, `statusText`, `reviewEnd`, `postPlan`, `transcript`, `requestLabel` |
 | `mailbox.ts` | `mailboxPaths`, `readMailbox`, `writeJsonAtomic`, `writeJsonAtomicSync`, `nextSeq`, `requestPath`, `answerPath`, the mailbox directory beside a tour. It needs Node, so `@guided-review/core/mailbox` exports it and the index does not. |
+| `layout.ts` | `reviewLayout`, `currentPointerPath`, `requestFile`, `answerFile`, and `ReviewLayout`: pure POSIX mailbox paths without filesystem access, available from the index. |
 | `git.ts` | `readDiffRanges`, which runs `git diff base...head`. It needs Node, so `@guided-review/core/git` exports it and the index does not. |
 | `index.ts` | Everything above except `mailbox.ts` and `git.ts` |
 

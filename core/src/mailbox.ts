@@ -1,23 +1,16 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { parseAnswer, parseHeartbeat, parseRequest, parseSession, REQUEST_ID_PATTERN, REVIEW_ID_PATTERN, type Answer, type Mailbox, type Request, type SessionRecord } from "./qa";
+import { parseAnswer, parseHeartbeat, parseRequest, parseSession, REQUEST_ID_PATTERN, type Answer, type Mailbox, type Request, type SessionRecord } from "./qa";
+import { answerFile, currentPointerPath, requestFile, reviewLayout, type ReviewLayout } from "./layout";
 
-export interface MailboxPaths {
-  root: string;
-  session: string;
-  inbox: string;
-  answered: string;
-  agent: string;
-  approved: string;
-}
+export type MailboxPaths = ReviewLayout;
 
 /** Resolve the active review; an explicit id pins a writer, and null addresses the legacy root. */
 export function mailboxPaths(tourPath: string, reviewId?: string | null): MailboxPaths {
-  let root = tourPath.replace(/\.json$/, "") + ".qa";
   if (reviewId === undefined) {
     try {
-      const current: unknown = JSON.parse(readFileSync(join(root, "current.json"), "utf8"));
+      const current: unknown = JSON.parse(readFileSync(currentPointerPath(tourPath), "utf8"));
       if (!current || typeof current !== "object" || !("reviewId" in current) || typeof current.reviewId !== "string") {
         throw new Error("invalid review pointer");
       }
@@ -26,26 +19,15 @@ export function mailboxPaths(tourPath: string, reviewId?: string | null): Mailbo
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
   }
-  if (reviewId != null) {
-    if (!REVIEW_ID_PATTERN.test(reviewId)) throw new Error("invalid review id");
-    root = join(root, "reviews", reviewId);
-  }
-  return {
-    root,
-    session: join(root, "session.json"),
-    inbox: join(root, "inbox"),
-    answered: join(root, "answered"),
-    agent: join(root, "agent.json"),
-    approved: join(root, "approved.json"),
-  };
+  return reviewLayout(tourPath, reviewId);
 }
 
 export function requestPath(paths: MailboxPaths, id: string): string {
-  return join(paths.inbox, `${id}.json`);
+  return requestFile(paths, id);
 }
 
 export function answerPath(paths: MailboxPaths, id: string): string {
-  return join(paths.answered, `${id}.json`);
+  return answerFile(paths, id);
 }
 
 export async function readJson(path: string): Promise<unknown> {

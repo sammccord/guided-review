@@ -121,6 +121,12 @@ In Hunk, a stack tour lists every layer under the verdict and marks the one unde
 
 ## The core library holds the tour logic
 
+| Module | Role |
+| --- | --- |
+| `core/src/layout.ts` | Derives POSIX mailbox paths without filesystem access through `reviewLayout`, `currentPointerPath`, `requestFile`, and `answerFile`. |
+| `core/src/mailbox.ts` | Reads the active review pointer and mailbox files, and writes records atomically in Node. |
+| `core/src/index.ts` | Exports the renderer-independent modules, including `layout.ts`, without Node built-ins. |
+
 Everything a renderer needs to understand a tour lives in `core/`, which has no UI dependencies. The Hunk extension is one renderer. A web page or an editor plugin could be another. [`core/README.md`](../core/README.md) lists the modules. The design rests on three functions.
 
 - `validateTour(raw, loadRanges)` parses the JSON, then asks the caller for the diff's hunk ranges, then checks anchors and collects warnings. The caller injects `loadRanges`, so core never assumes where the diff comes from. In Node, `readDiffRanges(cwd, base, head)` from `@guided-review/core/git` runs git. A browser that already has the patch text calls `parseDiffRanges(patch)` instead. On success the result carries the tour, its numbered stops, a link index with `linksFrom` and `linksTo`, and the warnings.
