@@ -8,5 +8,10 @@ const result = await runMain(process.argv.slice(2), {
   cwd: process.cwd(), signal: controller.signal,
   stdout: { write: (text) => { process.stdout.write(text); } },
   stderr: { write: (text) => { process.stderr.write(text); } },
+  readStdin: async () => {
+    const chunks: Buffer[] = [];
+    for await (const chunk of process.stdin) chunks.push(chunk as Buffer);
+    return Buffer.concat(chunks).toString("utf8");
+  },
 });
 process.exitCode = result.code;

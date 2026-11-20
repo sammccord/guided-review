@@ -14,6 +14,8 @@ export type CliContext = {
   stderr: CliWriter;
   program: string;
   notes: NoteSink;
+  /** Reads all of standard input for `--text-file -`; hosts without a usable stdin omit it. */
+  readStdin?: () => Promise<string>;
 };
 
 export type CliResult = { kind: "exit"; code: number };

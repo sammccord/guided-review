@@ -13,7 +13,7 @@ A usage error prints this text to stderr and exits with status 2:
 ```text
 usage: hunk tour check <tour.json> | open <tour.json> [--fresh]
        hunk tour wait <tour.json>... [--timeout <seconds>] [--away <minutes>]
-       hunk tour answer <tour.json> <id> --text <answer>
+       hunk tour answer <tour.json> <id> (--text <answer> | --text-file <path>)
        hunk tour approve <tour.json> [--body <text>]
 ```
 
@@ -35,7 +35,7 @@ Build with `bun run build:cli`, then run `node dist/guided-review.mjs <command>`
 guided-review check <tour.json>
 guided-review stage <worktree> <tour.json> [--session <id>] [--shared <dir>] [--fresh]
 guided-review wait <tour.json>... [--timeout <seconds>] [--away <minutes>]
-guided-review answer <tour.json> <id> --text <answer>
+guided-review answer <tour.json> <id> (--text <answer> | --text-file <path>)
 guided-review approve <tour.json> [--body <text>]
 ```
 
@@ -119,10 +119,12 @@ Errors:
 ## `tour answer`
 
 ```bash
-hunk tour answer <tour.json> <id> --text <answer>
+hunk tour answer <tour.json> <id> (--text <answer> | --text-file <path>)
 ```
 
 Answers one request from `wait`. The host's `NoteSink` posts the note before `tour answer` records the answer in `answered/<id>.json`. The answer file's `text` holds the supplied text, with two newlines and the GitHub comment URL appended for `comment` and `reviewer-comment` requests. Hunk posts a note, threaded under the reviewer's note when the request came from one; its session must be running, and `hunk` must be on your `PATH`. A host without notes only records the answer, with `commentId: null` in the answer file and stdout.
+
+Pass the answer with `--text <answer>` or `--text-file <path>`, not both. `--text-file` reads the file as UTF-8 and records its contents exactly, including quotes, backticks, `$(...)`, and newlines, so nothing passes through shell quoting. `--text-file -` reads standard input in the standalone CLI; the Hunk command has no stdin and rejects it. Relative paths resolve from the current directory. An empty or whitespace-only file is the same error as empty `--text`.
 
 You can run it by hand. Take the `id` from the `inbox/` file name, or from the `next` field of a `pending` result.
 
@@ -140,7 +142,10 @@ Errors:
 | Message | Status |
 | --- | --- |
 | the shared usage text, without a `tour answer: ` prefix | 2 |
-| `tour answer: --text must not be empty` | 2 |
+| `tour answer: --text must not be empty`, also for an empty `--text-file` | 2 |
+| `tour answer: pass either --text or --text-file, not both` | 2 |
+| `tour answer: this host cannot read stdin; pass --text-file <path>` | 2 |
+| `tour answer: cannot read <path>: <error>` | 1 |
 | `tour answer: the answer has no text on its first line` | 2 |
 | `tour answer: no request <id> in <inbox>` | 1 |
 | `tour answer: <session.json path> is missing; open the tour in Hunk first` | 1 |

@@ -25,7 +25,7 @@ const POLL_MS = 1000;
 export const QA_USAGE = [
   "usage: hunk tour check <tour.json> | open <tour.json> [--fresh]",
   "       hunk tour wait <tour.json>... [--timeout <seconds>] [--away <minutes>]",
-  "       hunk tour answer <tour.json> <id> --text <answer>",
+  "       hunk tour answer <tour.json> <id> (--text <answer> | --text-file <path>)",
   "       hunk tour approve <tour.json> [--body <text>]",
 ];
 
@@ -233,18 +233,32 @@ export async function runApprove(args: readonly string[], ctx: CliContext): Prom
   }
 }
 
-function parseAnswerArgs(args: readonly string[], cwd: string): { tour: string; id: string; text: string } | string {
-  const [tour, id, flag, text, ...extra] = args;
-  if (!tour || !id || flag !== "--text" || text === undefined || extra.length > 0) return QA_USAGE.join("\n");
-  if (text.trim() === "") return "tour answer: --text must not be empty";
-  return { tour: resolve(cwd, tour), id, text };
+async function parseAnswerArgs(args: readonly string[], ctx: CliContext): Promise<{ tour: string; id: string; text: string } | { error: string; code: 1 | 2 }> {
+  const [tour, id, ...flags] = args;
+  if (flags.includes("--text") && flags.includes("--text-file")) return { error: "tour answer: pass either --text or --text-file, not both", code: 2 };
+  const [flag, value, ...extra] = flags;
+  if (!tour || !id || (flag !== "--text" && flag !== "--text-file") || value === undefined || extra.length > 0) return { error: QA_USAGE.join("\n"), code: 2 };
+  let text = value;
+  if (flag === "--text-file" && value === "-") {
+    if (!ctx.readStdin) return { error: "tour answer: this host cannot read stdin; pass --text-file <path>", code: 2 };
+    text = await ctx.readStdin();
+  } else if (flag === "--text-file") {
+    const path = resolve(ctx.cwd, value);
+    try {
+      text = await readFile(path, "utf8");
+    } catch (error) {
+      return { error: `tour answer: cannot read ${path}: ${error instanceof Error ? error.message : String(error)}`, code: 1 };
+    }
+  }
+  if (text.trim() === "") return { error: "tour answer: --text must not be empty", code: 2 };
+  return { tour: resolve(ctx.cwd, tour), id, text };
 }
 
 export async function runAnswer(args: readonly string[], ctx: CliContext): Promise<CliResult> {
-  const parsed = parseAnswerArgs(args, ctx.cwd);
-  if (typeof parsed === "string") {
-    await writeLine(ctx.stderr, parsed);
-    return { kind: "exit", code: 2 };
+  const parsed = await parseAnswerArgs(args, ctx);
+  if ("error" in parsed) {
+    await writeLine(ctx.stderr, parsed.error);
+    return { kind: "exit", code: parsed.code };
   }
   const paths = mailboxPaths(parsed.tour);
   const box = await readMailbox(paths);

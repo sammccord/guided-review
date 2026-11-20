@@ -9,7 +9,7 @@ export const GUIDED_REVIEW_USAGE = [
   "usage: guided-review check <tour.json>",
   "       guided-review stage <worktree> <tour.json> [--session <id>] [--shared <dir>] [--fresh]",
   "       guided-review wait <tour.json>... [--timeout <seconds>] [--away <minutes>]",
-  "       guided-review answer <tour.json> <id> --text <answer>",
+  "       guided-review answer <tour.json> <id> (--text <answer> | --text-file <path>)",
   "       guided-review approve <tour.json> [--body <text>]",
 ];
 

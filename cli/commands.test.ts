@@ -26,7 +26,7 @@ interface Run {
   stderr: string;
 }
 
-async function run(handler: typeof runWait, args: string[], cwd: string, notes: NoteSink = hunkNotes): Promise<Run> {
+async function run(handler: typeof runWait, args: string[], cwd: string, notes: NoteSink = hunkNotes, extra: Partial<CliContext> = {}): Promise<Run> {
   let stdout = "";
   let stderr = "";
   const ctx: CliContext = {
@@ -36,6 +36,7 @@ async function run(handler: typeof runWait, args: string[], cwd: string, notes: 
     program: `hunk --extension ${new URL("..", import.meta.url).pathname.replace(/\/$/, "")} tour`,
     stdout: { write: async (chunk) => void (stdout += String(chunk)) },
     stderr: { write: async (chunk) => void (stderr += String(chunk)) },
+    ...extra,
   };
   return { result: await handler(args, ctx), stdout, stderr };
 }
@@ -320,6 +321,39 @@ else console.log(JSON.stringify(${JSON.stringify(scenario === "bad-response" ? {
     const result = await run(runAnswer, [tour, "q-1", "--text", text], dir, noNotes);
     expect(result.result).toEqual({ kind: "exit", code: 0 });
     expect((await Bun.file(answerPath(paths, "q-1")).json()).text).toBe(text);
+  });
+
+  test("answer text from a file or stdin is recorded verbatim", async () => {
+    const tour = join(dir, "text-file.tour.json");
+    const paths = mailboxPaths(tour);
+    const text = "It's `npm test` and $(rm -rf ~) \"quoted\"\n\n  indented\n";
+    const textPath = join(dir, "answer.txt");
+    writeFileSync(textPath, text);
+    await writeJsonAtomic(paths.session, session(tour));
+    for (const seq of [1, 2]) await writeJsonAtomic(requestPath(paths, `q-${seq}`), { id: `q-${seq}`, seq, at: "t1", kind: "ask", stop, anchor, text: "Why?" });
+    expect((await run(runAnswer, [tour, "q-1", "--text-file", "answer.txt"], dir, noNotes)).result).toEqual({ kind: "exit", code: 0 });
+    expect((await Bun.file(answerPath(paths, "q-1")).json()).text).toBe(text);
+    const piped = await run(runAnswer, [tour, "q-2", "--text-file", "-"], dir, noNotes, { readStdin: async () => text });
+    expect(piped.result).toEqual({ kind: "exit", code: 0 });
+    expect((await Bun.file(answerPath(paths, "q-2")).json()).text).toBe(text);
+  });
+
+  test("answer rejects both text forms, empty files, unreadable files, and stdin on a host without it", async () => {
+    const tour = join(dir, "text-file-errors.tour.json");
+    const emptyPath = join(dir, "empty.txt");
+    writeFileSync(emptyPath, " \n");
+    const both = await run(runAnswer, [tour, "q-1", "--text", "a", "--text-file", emptyPath], dir, noNotes);
+    expect(both).toMatchObject({ result: { kind: "exit", code: 2 }, stderr: "tour answer: pass either --text or --text-file, not both\n" });
+    const empty = await run(runAnswer, [tour, "q-1", "--text-file", emptyPath], dir, noNotes);
+    expect(empty).toMatchObject({ result: { kind: "exit", code: 2 }, stderr: "tour answer: --text must not be empty\n" });
+    const emptyStdin = await run(runAnswer, [tour, "q-1", "--text-file", "-"], dir, noNotes, { readStdin: async () => "" });
+    expect(emptyStdin).toMatchObject({ result: { kind: "exit", code: 2 }, stderr: "tour answer: --text must not be empty\n" });
+    const noStdin = await run(runAnswer, [tour, "q-1", "--text-file", "-"], dir, noNotes);
+    expect(noStdin).toMatchObject({ result: { kind: "exit", code: 2 }, stderr: "tour answer: this host cannot read stdin; pass --text-file <path>\n" });
+    const missing = await run(runAnswer, [tour, "q-1", "--text-file", "missing.txt"], dir, noNotes);
+    expect(missing.result).toEqual({ kind: "exit", code: 1 });
+    expect(missing.stderr).toStartWith(`tour answer: cannot read ${join(dir, "missing.txt")}: `);
+    expect((await run(runAnswer, [tour, "q-1", "--text-file"], dir, noNotes)).result).toEqual({ kind: "exit", code: 2 });
   });
 
   test("a host without notes records a process-free answer without invoking Hunk", async () => {
