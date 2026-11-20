@@ -23,6 +23,8 @@ This file lists all notable changes to this project. The format follows [Keep a 
 - `SKILL.md` step 9, "Answer the reviewer", and a review draft from the decisions in the report.
 - `core/src/qa.ts` and `core/src/mailbox.ts`, the Q&A model, its projections, and the mailbox files.
 - Tour launch support for Neovim terminals, zellij, kitty, WezTerm, Ghostty, Alacritty, Konsole, GNOME Terminal, foot, and Linux's x-terminal-emulator.
+- `answer --text-file <path>` reads the answer from a file, and `--text-file -` reads it from stdin in the standalone CLI, so quotes, backticks, and newlines reach the PR unchanged.
+- The vendored skill files include the tour format as `references/tour-format.md`.
 
 ### Changed
 
@@ -34,6 +36,7 @@ This file lists all notable changes to this project. The format follows [Keep a 
 - `tour wait` keeps the agent waiting on `idle` and reports `away` only after 30 minutes without reviewer activity, configurable with `--away`.
 - The `cleanup` command from `prepare.py` also removes the review's `.tour.qa` directory.
 - The README and install guide lead with `npx skills add sammccord/guided-review -g`, which installs the skill without a clone. The clone and `scripts/install.sh` route remains for contributors.
+- `stage` slugs always match `^[a-z0-9][a-z0-9._-]{0,127}$`, and `stage` refuses a diff over 8 MiB.
 
 ### Fixed
 
@@ -41,6 +44,10 @@ This file lists all notable changes to this project. The format follows [Keep a 
 - Reopened tours reuse decisions only when the repository and complete tour fingerprint match. Changed tours and stack layers use isolated review generations; previous history remains on disk.
 - Generation-qualified request IDs prevent delayed answers from reaching a new review. Answer and approval commands reject edited tours until they are reopened; the skill forbids automatic historical-note replay.
 - Each tour open owns a separate temporary sidecar, cleaned on shutdown. Moving symbolic base/head refs are resolved and pinned to commits before validation, session identity, and display.
+- Posting a request never overwrites an earlier request file, and a failed mailbox read raises instead of reading as missing. Mailbox reads stay under 16 in flight per port. Session patches keep `finishedAt` and `closedAt`, and a half-written review pointer raises `TransientReadError`.
+- `answer` and `approve` refuse to call `gh` unless the PR host is a remote of the reviewed repository.
+- Rerunning `answer` after an unclear PR comment failure reuses the comment already posted instead of posting a duplicate.
+- `prepare.py` rejects a shared tour whose `base` or `head` is not a full commit id before passing it to git, and passes tour values after `--end-of-options`.
 
 ## 0.1.0 - 2026-10-13
 

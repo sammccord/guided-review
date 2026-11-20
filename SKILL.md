@@ -156,7 +156,9 @@ The current stop shows three buttons with their keys: **Ask agent** (`Q`), **Com
 
 You are in Toshi when the `guided_review_open` tool is available. The Guided Review plugin provides it and bundles this skill and the `guided-review` command. In Toshi, use the commands below wherever a Hunk command appears. Otherwise use the Hunk commands.
 
-Here, `guided-review` means `node <skill>/bin/guided-review.mjs`. The plugin bundles it next to this file. It does not exist in a plain checkout. The panel needs no Hunk, and `hunk` is not required in Toshi.
+Here, `guided-review` means `node <skill>/bin/guided-review.mjs`. The plugin bundles it next to this file. It does not exist in a plain checkout. The panel needs no Hunk. Toshi does not use `hunk` or `scripts/open-tour.sh`.
+
+The tour file format is in `references/tour-format.md` next to this file. Read it when you write the tour in step 6.
 
 For step 8, run from the worktree:
 
@@ -165,6 +167,10 @@ guided-review stage <worktree> <tour.json>
 ```
 
 Add `--fresh` for a new review of the same tour. It reads the session id from `MUX_PTY_ID` and prints one JSON line with `slug`, `dir`, `tour`, the staged tour path, and `reviewId`. Then call `guided_review_open` with that `slug` once per review. For a stack, stage and open the layers bottom first. The panel shows the tour in the right rail. From here on, use the staged `tour` path from that output in every command, never the original tour path.
+
+Pass every answer as a file. Write the text to a temporary file with your file tool, then run `guided-review answer <staged tour> <id> --text-file <path>` instead of `--text`. The file keeps quotes, backticks, `$`, and newlines exactly as written, with no shell quoting. This matters most for a `reviewer-comment`, whose `body` must reach the PR unchanged.
+
+`answer` and `approve` contact GitHub only when the host in the tour's PR `url` is a remote of the reviewed repository. Otherwise they refuse and send nothing. If that happens, tell the reviewer the tour's PR link does not match this repository.
 
 ## 9. Answer the reviewer
 

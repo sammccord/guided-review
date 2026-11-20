@@ -43,7 +43,8 @@ guided-review approve <tour.json> [--body <text>]
 
 - Shared root: `--shared`, then `GUIDED_REVIEW_SHARED_DIR`, then `~/.mux/shared`.
 - Session id: `--session`, then `MUX_PTY_ID` when set.
-- Bundle: `<shared-root>/guided-review/<worktree-name>-<path-sha1-prefix>/`, using the first eight SHA-1 hex digits of the resolved worktree path.
+- Bundle: `<shared-root>/guided-review/<slug>/`. The slug is the worktree's directory name, lowercased, with every character outside `a-z`, `0-9`, `.`, `_`, and `-` replaced by `-`, leading non-alphanumerics removed, and cut to 100 characters (`review` if nothing is left), then `-` and the first eight SHA-1 hex digits of the resolved worktree path. Every slug matches `^[a-z0-9][a-z0-9._-]{0,127}$`.
+- Diff limit: `stage` refuses a diff over 8 MiB with `diff is <n> MiB; the Toshi panel reads at most 8 MiB. Review a smaller range or split the PR.`, before it writes anything.
 - Files: `review.tour.json`, `review.diff`, `meta.json`, and the `review.tour.qa/` mailbox.
 - Re-staging the same tour resumes its review generation; `--fresh` starts another.
 
@@ -128,7 +129,9 @@ Pass the answer with `--text <answer>` or `--text-file <path>`, not both. `--tex
 
 You can run it by hand. Take the `id` from the `inbox/` file name, or from the `next` field of a `pending` result.
 
-For a **Post finding to PR** (`comment`) or **Comment on PR** (`reviewer-comment`) request, `--text` is the comment for the author. For `reviewer-comment`, pass the request's `body` unchanged. `tour answer` posts it through `gh api` as a review comment at the session's head commit, on the stop's anchor. Then it adds a Hunk note with the comment's GitHub link. The tour needs a PR `url`, and `gh` must be logged in to the PR's host.
+For a **Post finding to PR** (`comment`) or **Comment on PR** (`reviewer-comment`) request, `--text` is the comment for the author. For `reviewer-comment`, pass the request's `body` unchanged. `tour answer` first lists the PR's review comments with `gh api --paginate --slurp repos/<owner>/<repo>/pulls/<number>/comments`. A comment with the same path, the same text, and the stop's line at the session's head commit (as `commit_id` and `line`, or `original_commit_id` and `original_line`) is reused. Otherwise it posts the text through `gh api` as a review comment at the session's head commit, on the stop's anchor. Then it adds a Hunk note with the comment's GitHub link. The tour needs a PR `url`, and `gh` must be logged in to the PR's host.
+
+The PR host must be a remote of the session's repository. `tour answer` reads every URL of every `git remote` (https, `ssh://`, and `user@host:path` forms) and compares hosts without case or port. If none matches, it refuses before calling `gh`, so a tour from someone else cannot send your comment, the commit id, or a host-scoped token such as `GH_ENTERPRISE_TOKEN` to a host you do not use.
 
 Output:
 
@@ -151,11 +154,12 @@ Errors:
 | `tour answer: <session.json path> is missing; open the tour in Hunk first` | 1 |
 | `tour answer: tour changed or has no saved identity; reopen the tour before answering or approving` | 1 |
 | `tour answer: tour has no PR url; add "url" to the tour or post the comment yourself` | 1 |
-| `tour answer: PR comment failed: <gh error>` | 1 |
+| `tour answer: PR host <host> is not a remote of this repository; refusing to send credentials there` | 1 |
+| `tour answer: PR comment failed (outcome unknown; rerun the same command, it checks for an existing comment first): <gh error>` | 1 |
 | `tour answer: the Hunk session for this tour (pid <pid>) is not running; reopen the tour` | 1 |
 | `tour answer: hunk session failed: <error>` | 1 |
 
-A `comment` or `reviewer-comment` answer posts to GitHub before it reaches Hunk. If Hunk is gone at that point, the command fails without recording the answer, and a retry posts the PR comment again.
+A `comment` or `reviewer-comment` answer posts to GitHub before it reaches Hunk. If `gh` fails without a clear outcome, or Hunk is gone at that point, the command fails without recording the answer. Rerun the same command with the same text. It finds the comment it already posted and does not post it again.
 
 ## `tour approve`
 
@@ -173,9 +177,10 @@ Checks, in order:
 4. The tour's `url` parses as a PR URL such as `https://<host>/<owner>/<repo>/pull/<number>`.
 5. The tour still matches the one that was reviewed.
 6. If `approved.json` records this head and an approval URL, report `already-approved` without calling GitHub.
-7. Otherwise, check that GitHub's current PR head equals the reviewed head.
-8. Check the current user's reviews for an `APPROVED` review at that commit. If found, record it and report `already-approved`.
-9. Otherwise, submit the approval and record it.
+7. The PR host is a remote of the session's repository, checked as for `tour answer`, before any `gh` call.
+8. Check that GitHub's current PR head equals the reviewed head.
+9. Check the current user's reviews for an `APPROVED` review at that commit. If found, record it and report `already-approved`.
+10. Otherwise, submit the approval and record it.
 
 Output:
 
@@ -193,6 +198,7 @@ Errors:
 | `tour approve: approval blocked:` followed by one blocker per line | 1 |
 | `tour approve: tour has no PR url` | 1 |
 | `tour approve: tour changed or has no saved identity; reopen the tour before answering or approving` | 1 |
+| `tour approve: PR host <host> is not a remote of this repository; refusing to send credentials there` | 1 |
 | `tour approve: PR head moved from <head> to <sha>; re-run the review` | 1 |
 | `tour approve: gh returned no PR head.sha` | 1 |
 | `tour approve: gh returned no current user login` | 1 |
